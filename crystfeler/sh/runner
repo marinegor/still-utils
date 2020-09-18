@@ -75,8 +75,14 @@ MERGE_OFFLINE="TRUE"
 SLURM_HEADER_FILE="slurm.header"
 SLURM_SETUP="module load apps/crystfel-0.9.0"
 
-TOP="none"
+# Essential folders
 time=$(date "+%Y_%m_%d_%H_%M_%S")
+LOGDIR="${PWD}/logs"; mkdir "${LOGDIR}" &> /dev/null
+STREAMDIR="${PWD}/streams"; mkdir "${STREAMDIR}" &> /dev/null
+
+
+
+TOP="none"
 for var in "$@"; do
 	if ! create_variables "$var"; then
 		echo "Input file ${var} is invalid"; exit 1
@@ -84,6 +90,12 @@ for var in "$@"; do
 done
 TOP="$(echo -e "${TOP}" | tr -d '[:space:]')"
 
+CURRENT_LOGDIR="${LOGDIR}/${PROJECT_NAME}_${time}"
+mkdir -p "${CURRENT_LOGDIR}/indexer-logs" 2>/dev/null || exit 1;
+
+for var in "$@"; do
+	cp $var "$CURRENT_LOGDIR"
+done
 # check if path is absolute, if not -- make it
 if ! [[ ${GEOM::1} == "/" ]]; then GEOM="${PWD}/${GEOM}"; fi
 if ! [[ ${CELL::1} == "/" ]]; then CELL="${PWD}/${CELL}"; fi
@@ -96,15 +108,6 @@ if [[ "$PEAKS" == "cxi" ]] || [[ "$PEAKS" == "h5" ]]; then
 	THRESHOLD="1"
 	HIGHRES="1.0"
 fi
-
-
-# Essential folders
-LOGDIR="${PWD}/logs"; mkdir "${LOGDIR}" &> /dev/null
-STREAMDIR="${PWD}/streams"; mkdir "${STREAMDIR}" &> /dev/null
-
-CURRENT_LOGDIR="${LOGDIR}/${PROJECT_NAME}_${time}"
-mkdir -p "${CURRENT_LOGDIR}/indexer-logs" 2>/dev/null || exit 1;
-
 
 # Shuffling the stream
 if   [[ "$SHUFFLE" == 1 ]] && [[ "$TOP" == "none" ]]; then
@@ -134,84 +137,84 @@ touch "streams/${PROJECT_NAME}_${time}.stream"
 ln -sf "streams/${PROJECT_NAME}_${time}.stream" laststream
 if [[ "${SLURM}" == "1" ]]; then
 	NLINES_INPUT="$(wc -l ${LST} | awk '{print $1}')"
-	NNODES=$(python -c "print(${NLINES_INPUT}/${NUM_WORKERS}/${NODELINES} + 1)")
 
 	# Divide initial list into separate lists for each job
 	split --numeric-suffixes=1 \
-		--additional-suffix=".lst" \
 		--suffix-length=4 \
+		--additional-suffix=".lst" \
 		--lines=${NODELINES} \
 		"${LST}" "${CURRENT_LOGDIR}/list_"
+	LST_NUM=$(ls ${CURRENT_LOGDIR}/list_* | wc -l)
+	if [[ LST_NUM -gt 1000 ]]; then
+		echo "Too many jobs in array! Change NODELINES!"
+		exit 1;
+	fi
 
-	# print headers to each worker
-	for worker_num in $(seq 1 ${NUM_WORKERS}); do
-		# here echo header
-		current_worker=${CURRENT_LOGDIR}/worker_${worker_num}.sh
-		cat ${SLURM_HEADER_FILE} >> "${current_worker}"
+	# print headers to worker script
+	
+	# here echo header
+	current_worker=${CURRENT_LOGDIR}/worker.sh
+	cat ${SLURM_HEADER_FILE} >> "${current_worker}"
 
-		echo "#SBATCH --chdir ${CURRENT_LOGDIR}" >> "${current_worker}" >> ${current_worker}
-		# echo "#SBATCH --job-name ${PROJECT_NAME:0:8}_w${worker_num}" >> ${current_worker}
-		echo "#SBATCH --job-name ${PROJECT_NAME:0:8}" >> ${current_worker}
-		echo "#SBATCH --output ${CURRENT_LOGDIR}/stdout_${worker_num}.log" >> ${current_worker}
-		echo "#SBATCH --error ${CURRENT_LOGDIR}/stderr_${worker_num}.log" >> ${current_worker}
-		echo "#SBATCH --nodes ${NNODES}" >> ${current_worker}
-		echo "#SBATCH --exclusive" >> ${current_worker}
-		echo >> "${current_worker}"
-		echo "${SLURM_SETUP}" >> "${current_worker}"
-		echo >> "${current_worker}"
-	done
+	echo "#SBATCH --chdir ${CURRENT_LOGDIR}" >> "${current_worker}" >> ${current_worker}
+	# echo "#SBATCH --job-name ${PROJECT_NAME:0:8}_w${worker_num}" >> ${current_worker}
+	echo "#SBATCH --job-name ${PROJECT_NAME:0:8}" >> ${current_worker}
+	echo "#SBATCH --output ${CURRENT_LOGDIR}/stdout_%a.log" >> ${current_worker}
+	echo "#SBATCH --error ${CURRENT_LOGDIR}/stderr_%a.log" >> ${current_worker}
+	echo "#SBATCH --nodes 1" >> ${current_worker}
+	echo "#SBATCH --exclusive" >> ${current_worker}
+	if [[ ! -z $EXCLUDE_NODES ]]; then
+		echo "#SBATCH --exclude=${EXCLUDE_NODES}" >> ${current_worker}
+	fi
+	if [[ -z $MAX_NODES ]]; then 
+		echo "#SBATCH --array=1-${LST_NUM}" >> ${current_worker}
+	else
+		echo "#SBATCH --array=1-${LST_NUM}%${MAX_NODES}" >> ${current_worker}
+	fi
+	echo >> "${current_worker}"
+	echo "${SLURM_SETUP}" >> "${current_worker}"
+	echo >> "${current_worker}"
+
+	echo 'printf -v TASK_ID "%04d\n" ${SLURM_ARRAY_TASK_ID}' >> ${current_worker}
+	echo "TASK_ID=\${TASK_ID%$'\n'}" >> ${current_worker}
 
 	# writing tail line
 	if [[ "${MERGE_OFFLINE}" == "FALSE" ]]; then
-		worker_num=0
-		for current_lst in "${CURRENT_LOGDIR}/list_"*; do
-			dummy="$(basename "${current_lst}" .lst)"
-			current_idx=${dummy: -4}  # 4 is hardcoded in suffix-length in 'split' command above
-			worker_num=$(( worker_num % NUM_WORKERS + 1))
-			current_stream=${CURRENT_LOGDIR}/stream_${current_idx}.stream
-			current_worker=${CURRENT_LOGDIR}/worker_${worker_num}.sh
-		
-			echo "touch ${current_stream}" >> "${current_worker}"
-			echo "tail -f ${current_stream} --pid=\$\$ | pylock ${STREAMDIR}/${PROJECT_NAME}_${time}.stream & disown" >> "${current_worker}"
 
-		done
+		current_stream=${CURRENT_LOGDIR}/stream_\${TASK_ID}.stream
+	
+		echo "touch ${current_stream}" >> "${current_worker}"
+		echo "tail -f ${current_stream} --pid=\$\$ | pylock ${STREAMDIR}/${PROJECT_NAME}_${time}.stream & disown" >> "${current_worker}"
+
 	fi
 
 	# writing multiple-worker execution strings
-	worker_num=0
-	for current_lst in "${CURRENT_LOGDIR}/list_"*; do
-		dummy="$(basename "${current_lst}" .lst)"
-		current_idx=${dummy: -4}  # 4 is hardcoded in suffix-length in 'split' command above
-		worker_num=$(( worker_num % NUM_WORKERS + 1))
-		current_stream=${CURRENT_LOGDIR}/stream_${current_idx}.stream
-		current_worker=${CURRENT_LOGDIR}/worker_${worker_num}.sh
 
-		# now writing the execution string itself
-		EXECSTRING="srun --exclusive --nodes=1 -c ${NPROC} --ntasks 1 ${BASEEXECSTRING} -o ${current_stream} -i ${current_lst}"
-		EXECSTRING="${EXECSTRING} --peaks=${PEAKS} --indexing=${INDEXING}"
-		EXECSTRING="${EXECSTRING} -j ${NPROC}"  # this will use the `nproc` value on host machine
+		
+	current_stream=${CURRENT_LOGDIR}/stream_\${TASK_ID}.stream
+	current_lst=${CURRENT_LOGDIR}/list_\${TASK_ID}.lst
 
-		echo "$EXECSTRING &" >> "${current_worker}"
+	# now writing the execution string itself
+	EXECSTRING="${BASEEXECSTRING} -o \"${current_stream}\" -i \"${current_lst}\""
+	EXECSTRING="${EXECSTRING} --peaks=${PEAKS} --indexing=${INDEXING}"
+	EXECSTRING="${EXECSTRING} -j ${NPROC}"  # this will use the `nproc` value on host machine
 
-		# echo "cat ${current_stream} | pylock ${STREAMDIR}/${PROJECT_NAME}_${time}.stream.final" >> "${current_worker}"
-		# targz partial streams to save some space
-		# echo "tar fcz ${current_stream}.tar.gz ${current_stream} --absolute-names" >> "${current_worker}"
-	done
+	echo "$EXECSTRING &" >> "${current_worker}"
+
+	# echo "cat ${current_stream} | pylock ${STREAMDIR}/${PROJECT_NAME}_${time}.stream.final" >> "${current_worker}"
+	# targz partial streams to save some space
+	# echo "tar fcz ${current_stream}.tar.gz ${current_stream} --absolute-names" >> "${current_worker}"
 
 	# modifying node numbers and running sbatch-ing workers
-	for worker in "${CURRENT_LOGDIR}/worker_"*; do
-		echo "wait" >> "${worker}"
-		cat "${worker}" | sed "s/SBATCH --nodes ${NNODES}/SBATCH --nodes $(cat ${worker} | grep srun | wc -l)/g" > "${CURRENT_LOGDIR}/tmp_worker.sh"
-		cp "${CURRENT_LOGDIR}/tmp_worker.sh" "${worker}"
-		rm "${CURRENT_LOGDIR}/tmp_worker.sh"
-		if [[ "${DEBUG}" == "FALSE" ]]; then
-			JOB_NUMBERS="${JOB_NUMBERS} $(sbatch "${worker}" | awk '{ print $4 }')"
-		else
-			JOB_NUMBERS="${JOB_NUMBERS} $(echo "$worker" | awk '{print substr($0,length($0)-3,1)}')" # make e.g 2 from worker_2.sh
-		fi
-	done
 
-	echo "Job numbers submitted are ${JOB_NUMBERS}"
+	echo "wait" >> "${current_worker}"
+	if [[ "${DEBUG}" == "FALSE" ]]; then
+		JOB_NUMBER="$(sbatch "${current_worker}" | awk '{ print $4 }')"
+	else
+		JOB_NUMBER="1"
+	fi
+
+	echo "Job numbers submitted are ${JOB_NUMBER}"
 
 	if [[ "${MERGE_OFFLINE}" == "TRUE" ]]; then
 
@@ -225,9 +228,7 @@ if [[ "${SLURM}" == "1" ]]; then
 		echo "#SBATCH --cpus-per-task=1" >> ${merger}
 
 		dep_string="#SBATCH --dependency=afterany"
-		for job_number in ${JOB_NUMBERS}; do
-			dep_string="${dep_string}:${job_number}"
-		done
+		dep_string="${dep_string}:${JOB_NUMBER}"
 
 		echo "${dep_string}" >> ${merger}
 		echo >> "${merger}"
@@ -238,6 +239,7 @@ if [[ "${SLURM}" == "1" ]]; then
 		done" >> "${merger}"
 		
 		if [[ "${DEBUG}" == "FALSE" ]]; then
+			sleep 5
 			sbatch "${merger}"
 		fi
 	fi

@@ -117,6 +117,7 @@ STRING_PARAMS=""
 MODEL=""
 MULTI_RMSD=""
 FIRST=""
+COMMAND="$0 $@"
 
 ############################
 # READING INPUT PARAMETERS #
@@ -475,19 +476,19 @@ function rate() {
 		STRING="compare_hkl ${HKL_TEMPLATE}1 ${HKL_TEMPLATE}2 ${COMPARE_HKL_PARAMS} --nshells 10 --fom ${fom} &> ${LOGS}/compare_hkl_${fom}.log"
 		echo "${STRING}" >>"${LOGS}/execution.log"
 		eval "${STRING}"
-		mv shells.dat "${LOGS}/shells_${fom}.dat"
+		mv shells.dat "${LOGS}/shells_${fom}.dat" &> /dev/null
 	done
 	STRING="check_hkl ${HKL_TEMPLATE} ${COMPARE_HKL_PARAMS} --nshells 10 &> ${LOGS}/check_hkl.log"
 	echo "${STRING}" >>"${LOGS}/execution.log"
 	eval "${STRING}"
-	mv shells.dat "${LOGS}/check_hkl.dat"
+	mv shells.dat "${LOGS}/check_hkl.dat" &> /dev/null
 
 	# do whole-resolution
 	for fom in "${FOMS[@]}"; do
 		STRING="compare_hkl ${HKL_TEMPLATE}1 ${HKL_TEMPLATE}2 ${COMPARE_HKL_PARAMS} --nshells 1 --fom ${fom} &> ${LOGS}/compare_hkl_${fom}_full.log"
 		echo "${STRING}" >>"${LOGS}/execution.log"
 		eval "${STRING}"
-		mv shells.dat "${LOGS}/shells_${fom}_full.dat" &>/dev/null
+		mv shells.dat "${LOGS}/shells_${fom}_full.dat" &>/dev/null 
 	done
 	STRING="check_hkl ${HKL_TEMPLATE} ${COMPARE_HKL_PARAMS} --nshells 1 &> ${LOGS}/check_hkl_full.log"
 	echo "${STRING}" >>"${LOGS}/execution.log"
@@ -497,28 +498,31 @@ function rate() {
 	# merge all together
 
 	paste "${LOGS}/check_hkl.dat" \
-		<(awk '{print $3}' "${LOGS}/shells_rsplit.dat") \
-		<(awk '{print $3}' "${LOGS}/shells_cc.dat") \
-		<(awk '{print $3}' "${LOGS}/shells_ccstar.dat") \
-		<(awk '{print $3}' "${LOGS}/shells_ccano.dat") \
-		<(awk '{print $3}' "${LOGS}/shells_rano.dat") | head -n 1 >>"${LOGS}/overall_stats.csv"
+		<(awk '{print $3}' "${LOGS}/shells_rsplit.dat" 2>/dev/null) \
+		<(awk '{print $3}' "${LOGS}/shells_cc.dat"     2>/dev/null) \
+		<(awk '{print $3}' "${LOGS}/shells_ccstar.dat" 2>/dev/null) \
+		<(awk '{print $3}' "${LOGS}/shells_ccano.dat"  2>/dev/null) \
+		<(awk '{print $3}' "${LOGS}/shells_rano.dat"   2>/dev/null) | head -n 1 >>"${LOGS}/overall_stats.csv"
 	paste "${LOGS}/check_hkl.dat" \
-		<(awk '{print $2}' "${LOGS}/shells_rsplit.dat") \
-		<(awk '{print $2}' "${LOGS}/shells_cc.dat") \
-		<(awk '{print $2}' "${LOGS}/shells_ccstar.dat") \
-		<(awk '{print $2}' "${LOGS}/shells_ccano.dat") \
-		<(awk '{print $2}' "${LOGS}/shells_rano.dat") | tail -n+2 >>"${LOGS}/overall_stats.csv"
+		<(awk '{print $2}' "${LOGS}/shells_rsplit.dat" 2>/dev/null) \
+		<(awk '{print $2}' "${LOGS}/shells_cc.dat"     2>/dev/null) \
+		<(awk '{print $2}' "${LOGS}/shells_ccstar.dat" 2>/dev/null) \
+		<(awk '{print $2}' "${LOGS}/shells_ccano.dat"  2>/dev/null) \
+		<(awk '{print $2}' "${LOGS}/shells_rano.dat"   2>/dev/null) | tail -n+2 >>"${LOGS}/overall_stats.csv"
 	echo "   -------------------------------------------------------------------------------------------------------------------------------------------------------" \
 		>>"${LOGS}/overall_stats.csv"
 	paste "${LOGS}/check_hkl_full.dat" \
-		<(awk '{print $2}' "${LOGS}/shells_rsplit_full.dat") \
-		<(awk '{print $2}' "${LOGS}/shells_cc_full.dat") \
-		<(awk '{print $2}' "${LOGS}/shells_ccstar_full.dat") \
-		<(awk '{print $2}' "${LOGS}/shells_ccano_full.dat") \
-		<(awk '{print $2}' "${LOGS}/shells_rano_full.dat") | tail -n+2 >>"${LOGS}/overall_stats.csv"
+		<(awk '{print $2}' "${LOGS}/shells_rsplit_full.dat"  2>/dev/null) \
+		<(awk '{print $2}' "${LOGS}/shells_cc_full.dat"      2>/dev/null) \
+		<(awk '{print $2}' "${LOGS}/shells_ccstar_full.dat"  2>/dev/null) \
+		<(awk '{print $2}' "${LOGS}/shells_ccano_full.dat"   2>/dev/null) \
+		<(awk '{print $2}' "${LOGS}/shells_rano_full.dat"    2>/dev/null) | tail -n+2 >>"${LOGS}/overall_stats.csv"
 	cat "${LOGS}/overall_stats.csv"
 
 }
+
+# SAVING FULL COMMAND
+echo "$COMMAND" > "${LOGS}/command.log"
 
 # PART WHERE I DO STREAM ANALYTICS
 #	- per-indexer dictribution
@@ -567,7 +571,7 @@ if [[ "$NIMAGES_INPUT" != "n/a (file lists not available)" ]]; then
 fi
 
 if [[ $(grep -c -- '--no-non-hits-in-stream' ${INPUT}) != 0 ]]; then
-	echo -e "\e[33mWarning:\e[0m following two values are unreliable, since the stream does not contain hits with peaks less then certain value"
+	echo -e "\e[33mWarning:\e[0m following two values may be unreliable, since the stream does not contain non-hits (--no-non-hits-in-stream option was used in indexamajig)"
 fi
 echo "Image indexing rate: $(python -c "print(round(100*${NINDEXED}/${NIMAGES}.,2))") %"
 echo "Crystals percentage: $(python -c "print(round(100*${NCRYST}/${NIMAGES}.,2))") %"

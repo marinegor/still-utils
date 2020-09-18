@@ -8,9 +8,11 @@ import sys
 from collections import defaultdict
 from scipy.cluster.hierarchy import ward, fcluster
 from scipy.spatial.distance import pdist
-from sklearn.decomposition import NMF, TruncatedSVD
 from tqdm import tqdm
 from typing import Union
+
+from imagereader import CXIReader, CBFReader, H5Reader
+from denoisers import NMFDenoiser, PercentileDenoiser, SVDDenoiser
 
 
 class ImageLoader:
@@ -19,21 +21,29 @@ class ImageLoader:
     loading images one by one and returning a handle to write them
     """
 
-    def __init__(self, input_list, chunksize=100):
-        self.input = input
+    def __init__(self, input_list, chunksize=100, cxi_path=None, h5_path=None):
+        self.input_list = input_list
         self.chunksize = chunksize
 
+        # initialize chain of image readers
+        self.cxi_reader = CXIReader(path_to_data=cxi_path)
+        self.cbf_reader = CBFReader()
+        self.h5_reader = H5Reader(path_to_data=h5_path)
+        self.cxi_reader.next_reader(self.cbf_reader).next_reader(self.h5_reader)
+        self.image_reader = self.cxi_reader
+
         # load all frames from input list
-        data = defaultdict(lambda: set())
+        data = set()
         with open(input_list, mode="r") as fin:
             for line in fin:
-                splitline = line.split()
-                image = splitline[0]
-                event = None if len(splitline) == 1 else splitline[1].replace("//", "")
+                if line.rstrip().endswith('.cxi'):
+                    num_events = self.cxi_reader.get_events_number(line.rstrip())
+                    for i in range(num_events):
+                        data.add(line.rstrip() + " //" + str(i))
+                else:
+                    data.add(line.rstrip())
 
-                data[image].add(event)
-
-        self._data = data
+        self._data = list(data)
 
     def __iter__(self):
         return self
@@ -47,56 +57,24 @@ class ImageLoader:
         self.data = self.data - data_to_return
         return data_to_return, handles_to_return
         """
-
-
-def _apply_mask(np_arr, center=(719.9, 711.5), radius=45):
-    """
-    _apply_mask applies circular mask to a single image or image series
-
-    Parameters
-    ----------
-    np_arr : np.ndarray
-        Input array to apply mask to
-    center : tuple
-        (corner_x, corner_y) pair of floats
-    r : int, optional
-        radius of pixels to be zeroed, by default 45
-
-    Returns
-    -------
-    np.ndarray
-        Same shaped and dtype'd array as input
-    """
-
-    if len(np_arr.shape) == 3:
-        shape = np_arr.shape[1:]
-        shape_type = 3
-    else:
-        shape = np_arr.shape
-        shape_type = 2
-    mask = np.ones(shape)
-
-    rx, ry = map(int, center)
-    r = radius
-    for x in range(rx - r, rx + r):
-        for y in range(ry - r, ry + r):
-            if (x - rx) ** 2 + (y - ry) ** 2 <= r ** 2:
-                mask[x][y] = 0
-
-    if shape_type == 2:
-        return (np_arr * mask).astype(np_arr.dtype)
-    else:
-        mask = mask.reshape((*shape, 1))
-        return (np_arr * mask.reshape(1, *shape)).astype(np_arr.dtype)
+        current_chunk_list = self._data[:self.chunksize]
+        if len(current_chunk_list) == 0:
+            raise StopIteration
+        result = []
+        for event in current_chunk_list:
+            result.append(self.image_reader.get_image(event))
+        self._data = self._data[self.chunksize:]
+        result = np.stack(result, axis=0)
+        return current_chunk_list, result
 
 
 def cluster_ndarray(
-    profiles_arr: np.ndarray,
-    output_prefix="clustered",
-    output_lists=False,
-    threshold=25,
-    criterion="maxclust",
-    min_num_images=50,
+        profiles_arr,
+        output_prefix="clustered",
+        output_lists=False,
+        threshold=25,
+        criterion="maxclust",
+        min_num_images=50,
 ):
     """
     cluster_ndarray clusters images based on their radial profiles
@@ -123,8 +101,8 @@ def cluster_ndarray(
            - Dictionary {cluster_num:[*image_and_event_lines]} -- if output_lists == False
            - List [output_list_1.lst, output_list_2.lst, ...] -- if output_lists == True
     """
-    profiles = np.array([elem[2] for elem in profiles_arr])
-    names_and_events = profiles_arr[:, :2]
+    profiles = np.array([elem[1] for elem in profiles_arr])
+    names = np.array([elem[0] for elem in profiles_arr])
 
     # this actually does clustering
     Z = ward(pdist(profiles))
@@ -148,10 +126,8 @@ def cluster_ndarray(
             pass
 
         # print output lists if you want to
-        for line in names_and_events[belong_to_this_idx]:
-            cxi_name, event = line
-            frame_address = f"{cxi_name} //{event}"
-            clusters[out_cluster_idx].add(frame_address)
+        for name in names[belong_to_this_idx]:
+            clusters[out_cluster_idx].add(name)
         if output_lists:
             with open(fout_name, "a") as fout:
                 print(*clusters[out_cluster_idx], sep="\n", file=fout)
@@ -160,81 +136,6 @@ def cluster_ndarray(
         return list(out_lists)
     else:
         return clusters
-
-
-def _percentile_filter(arr, q=45):
-    """
-    _percentile_filter creates background profile
-
-    Parameters
-    ----------
-    arr : 3D np.ndarray (series of 2D images)
-        input array
-    q : int, optional
-        percentile for filtering, by default 45
-
-    Returns
-    -------
-    np.ndarray
-        2D np.ndarray of background profile
-    """
-
-    return np.percentile(arr, q=q, axis=(0))
-
-
-def _bin_scale(arr, b, alpha=0.01, num_iterations=10):
-    """
-    _bin_scale binary search for proper scale factor
-
-    Parameters
-    ----------
-    arr : np.ndarray
-        Input 3-D array (N + 2D)
-    b background
-        Single image (backgorund profile)
-    alpha : float, optional
-        Share of pixels to be negative, by default 0.01
-    num_iterations : int, optional
-        Number of binary search iterations, by default 10
-
-    Returns
-    -------
-    np.ndarray
-        proper scalefactors
-    """
-
-    num_negative = alpha * arr.shape[0] * arr.shape[1]
-
-    def count_negative(scale):
-        return (arr - scale * b < 0).sum()
-
-    l, r, m = 0, 1, 2
-
-    for _ in range(num_iterations):
-        m = (l + r) / 2
-        mv = count_negative(m)
-
-        if mv < num_negative:
-            l, r = m, r
-        else:
-            l, r = l, m
-
-    return l
-
-
-def _scalefactors_bin(arr, bg, alpha=0.01, num_iterations=10):
-    """\
-    Find proper scalefactor for an image given f _percentile_filter 
-    so that the share of negative pixels in resulting difference 
-    is less thatn threshold
-    """
-    # print("Start scalefactor estimation")
-    return np.array(
-        [
-            _bin_scale(arr[i], bg, alpha=alpha, num_iterations=num_iterations)
-            for i in range(arr.shape[0])
-        ]
-    )
 
 
 def _radial_profile(data, center, normalize=True):
@@ -271,7 +172,7 @@ def _radial_profile(data, center, normalize=True):
 
 
 def lst2profiles_ndarray(
-    input_lst: str, center, cxi_path="/entry_1/data_1/data", chunksize=100, radius=45,
+        input_lst: str, center, cxi_path="/entry_1/data_1/data", h5_path="/data/rawdata0", chunksize=100, radius=45,
 ) -> np.ndarray:
     """
     lst2profiles_ndarray converts CrystFEL list into 2D np.ndarray with following structure:
@@ -290,94 +191,38 @@ def lst2profiles_ndarray(
 
     Returns
     -------
-    np.ndarray
-        np.array([filename, event_name, *profile])
+    List
+        [filename, *profile]
     """
 
-    events_dict = {}
-    with open(input_lst, "r") as fin:
-        for line in fin:
-            if "//" in line:  # if line represents an event in cxi
-                filename, event = line.split(" //")
-                event = int(event)
-                if filename[0] != "/":  # if path is not absolute
-                    filename = f"{os.getcwd()}/{filename}"
-                if filename in events_dict:
-                    if None not in events_dict[filename]:
-                        events_dict[filename].add(event)
-                    else:
-                        pass
-                else:
-                    events_dict[filename] = {event}
-            else:  # if line represents both event and its absence
-                filename = line.rstrip()
-                if filename[0] != "/":  # if path is not absolute
-                    filename = os.getcwd() + filename
-                events_dict[line] = {None}
+    loader = ImageLoader(input_lst, cxi_path=cxi_path, h5_path=h5_path, chunksize=chunksize)
 
-    cxi_cnt = 0
+    profiles = []
 
-    profiles_dict = {}
-    for input_cxi, events in tqdm(
-        events_dict.items(), desc=f"Reading cxi files from {input_lst} one by one"
-    ):
-        cxi_cnt += 1
+    for lst, data in tqdm(loader, desc='Converting images to radial profiles'):
 
-        # create events list
-        if None in events:
-            with h5py.File(input_cxi, "r") as fin:
-                cxi_fist_dimension = fin.shape[0]
-                events = list(range(cxi_fist_dimension))
-        else:
-            events = sorted(list(events))
+        for elem in zip(lst, data):
+            profile = _radial_profile(elem[1], center=center)
+            profiles.append([elem[0], profile])
 
-        num_images = len(events)
-
-        event_profile_pairs = []
-        with h5py.File(input_cxi, "r") as h5fin:
-            data = h5fin[cxi_path]
-
-            for chunk_start in tqdm(
-                range(0, num_images, chunksize), desc="Reading images in chunks"
-            ):
-                start, stop = chunk_start, chunk_start + chunksize
-
-                events_idx = np.array(events)[start:stop]
-                current_data = data[events_idx]
-                current_data = _apply_mask(current_data, center=center, radius=radius)
-
-                for event, image in zip(events_idx, current_data):
-                    profile = _radial_profile(image, center=center)
-                    event_profile_pairs.append([event, profile])
-
-        profiles_dict[input_cxi] = event_profile_pairs
-
-    ret = []
-    for cxi_name, arr in tqdm(
-        profiles_dict.items(), desc="Iterating over profiles_dict"
-    ):
-        for event, profile in tqdm(
-            arr, desc="Iterate over each single cxi image filename"
-        ):
-            ret.append(np.array([cxi_name, event, profile]))
-    ret = np.array(ret)
-    return ret
+    return profiles
 
 
 def denoise_lst(
-    input_lst: str,
-    center=None,
-    radius=None,
-    denoiser="nmf",
-    cxi_path="/entry_1/data_1/data",
-    output_cxi_prefix=None,
-    output_lst=None,
-    compression="gzip",
-    chunks=True,
-    chunksize=100,
-    zero_negative=True,
-    dtype=np.int16,
-    **denoiser_kwargs,
+        input_lst: str,
+        center=None,
+        radius=None,
+        denoiser_type="nmf",
+        cxi_path="/entry_1/data_1/data",
+        h5_path="/data/rawdata0",
+        output_cxi_prefix=None,
+        output_lst=None,
+        compression="gzip",
+        chunks=True,
+        chunksize=100,
+        zero_negative=True,
+        dtype=np.int16,
+        **denoiser_kwargs,
 ) -> None:
     """
     denoise_lst applies denoiser to a list
@@ -386,7 +231,7 @@ def denoise_lst(
     ----------
     input_lst : str
         input list in CrystFEL format
-    denoiser : str, optional
+    denoiser_type : str, optional
         denoiser type, by default "nmf"
     cxi_path : str, optional
         path inside a cxi file, by default "/entry_1/data_1/data"
@@ -409,202 +254,40 @@ def denoise_lst(
         If denoiser is not in ('percentile', 'nmf','svd')
     """
 
-    if denoiser == "percentile":
-        process_chunk = percentile_denoise
-    elif denoiser == "nmf":
-        process_chunk = nmf_denoise
-    elif denoiser == "svd":
-        process_chunk = svd_denoise
+    if denoiser_type == "percentile":
+        denoiser = PercentileDenoiser(**denoiser_kwargs)
+    elif denoiser_type == "nmf":
+        denoiser = NMFDenoiser(**denoiser_kwargs)
+    elif denoiser_type == "svd":
+        denoiser = SVDDenoiser(**denoiser_kwargs)
     else:
         raise TypeError("Must provide correct denoiser")
-
-    events_dict = {}
-    with open(input_lst, "r") as fin:
-        for line in fin:
-            if "//" in line:  # if line represents an event in cxi
-                filename, event = line.split(" //")
-                event = int(event)
-                if filename[0] != "/":  # if path is not absolute
-                    filename = f"{os.getcwd()}/{filename}"
-                if filename in events_dict:
-                    if None not in events_dict[filename]:
-                        events_dict[filename].add(event)
-                    else:
-                        pass
-                else:
-                    events_dict[filename] = {event}
-            else:  # if line represents both event and its absence
-                filename = line.rstrip()
-                if filename[0] != "/":  # if path is not absolute
-                    filename = os.getcwd() + filename
-                events_dict[line] = {None}
 
     if output_cxi_prefix is None:
         output_cxi_prefix = ""
 
-    cxi_cnt = 0
-    for input_cxi, events in tqdm(
-        events_dict.items(), desc=f"Processing files in {input_lst} one by one"
-    ):
-        cxi_cnt += 1
+    loader = ImageLoader(input_lst, cxi_path=cxi_path, h5_path=h5_path, chunksize=chunksize)
 
-        # create events list
-        if None in events:
-            with h5py.File(input_cxi, "r") as fin:
-                cxi_fist_dimension = fin.shape[0]
-                events = list(range(cxi_fist_dimension))
-        else:
-            events = sorted(list(events))
+    chunk_idx = 0
 
-        num_images = len(events)
+    for lst, data in loader:
+        new_data = denoiser.denoise(data, center=center, radius=radius, **denoiser_kwargs).astype(dtype)
 
-        with h5py.File(input_cxi, "r") as h5fin:
-            data = h5fin[cxi_path]
+        if zero_negative:
+            new_data[new_data < 0] = 0
 
-            for chunk_start in tqdm(
-                range(0, num_images, chunksize), desc="Running denoising in chunks"
-            ):
-                start, stop = chunk_start, chunk_start + chunksize
-                chunk_idx = chunk_start // chunksize
+        output_cxi = f'{output_cxi_prefix}_{input_lst.rsplit(".")[0]}_{chunk_idx}.cxi'
+        shape = data.shape
 
-                events_idx = np.array(events)[start:stop]
-                current_data = data[events_idx]
-                new_data = process_chunk(
-                    current_data, center=center, radius=radius, **denoiser_kwargs
-                ).astype(dtype)
-                if zero_negative:
-                    new_data[new_data < 0] = 0
-
-                output_cxi = f'{output_cxi_prefix}_{input_lst.rsplit(".")[0]}_{cxi_cnt}_{chunk_idx}.cxi'
-                shape = current_data.shape
-
-                with h5py.File(output_cxi, "w") as h5fout:
-                    h5fout.create_dataset(
-                        cxi_path,
-                        shape,
-                        compression="gzip",
-                        data=new_data,
-                        chunks=chunks,
-                    )
-
-
-def percentile_denoise(data, center, percentile=45, alpha=5e-2, radius=45):
-    """
-    percentile_denoise applies percentile denoising:
-    - create percentile-based background profille
-    - apply mask
-    - subtract background with such scale that less thatn `alpha` resulting pixels are negative
-
-    Parameters
-    ----------
-    data : np.ndarray
-        Input data (series of 2D images, 3D total)
-    center : tuple, optional
-        (corner_x, corner_y), by default (720, 710)
-    percentile : int, optional
-        percentile to use, by default 45
-
-    Returns
-    -------
-    np.ndarray
-        Denoised images
-    """
-    data = _apply_mask(data, center=center, radius=radius)
-    bg = _percentile_filter(data, q=percentile)
-    scales = _scalefactors_bin(data, bg, alpha=alpha)
-
-    full_bg = np.dot(bg.reshape(*(bg.shape), 1), scales.reshape(1, -1))
-    full_bg = np.moveaxis(full_bg, 2, 0)
-
-    data = data - full_bg
-    del full_bg
-    return data
-
-
-def nmf_denoise(arr, center, n_components=5, important_components=1, radius=45):
-    """
-    nmf_denoise performs NMF-decomposition based denoising
-    - (N, M, M) image series --> (N, M**2) flattened images
-    - (N, M**2) = (N, n_components) @ (n_components, M**2) NMF decomposition
-    - background: (n_components, M**2) --> (important_components, M**2)
-    - scales: (N, n_components) --> (N, important_components)
-    - scaled_background = scales @ background
-    - return arr - scaled_background
-
-    Parameters
-    ----------
-    arr : np.ndarray
-        Input data (series of 2D images, 3D total)
-    center : tuple
-        (corner_x, corner_y) tuple
-    n_components : int, optional
-        n_components for dimensionality reduction, by default 5
-    important_components : int, optional
-        number of components to account for, by default 1
-
-    Returns
-    -------
-    np.ndarray
-        Denoised data
-    """
-    img_shape = arr.shape[1:]
-    X = arr.reshape(arr.shape[0], -1)
-
-    nmf = NMF(n_components=n_components)
-    nmf.fit(X)
-    coeffs = nmf.transform(X)
-
-    bg_full = nmf.components_
-    bg_scaled = (
-        coeffs[:, :important_components] @ bg_full[:important_components, :]
-    ).reshape(arr.shape[0], *img_shape)
-
-    return _apply_mask(arr - bg_scaled, radius=radius, center=center)
-
-
-def svd_denoise(
-    arr, center, n_components=5, important_components=1, n_iter=5, radius=45
-):
-    """
-    svd_denoise performs SVD-based denoising of input array
-    - (N, M, M) image series --> (N, M**2) flattened images
-    - (N, M**2) = (N, n_components) @ (n_components, M**2) SVD decomposition
-    - background: (n_components, M**2) --> (important_components, M**2)
-    - scales: (N, n_components) --> (N, important_components)
-    - scaled_background = scales @ background
-    - return arr - scaled_background
-
-    Parameters
-    ----------
-    arr : np.ndarra
-        3D numpy array (series of 2D images)
-    center : tuple
-        (corner_x, corner_y) tuple
-    n_components : int, optional
-        n_components for TruncatedSVD decomposition, by default 5
-    important_components : int, optional
-        number of components to account fo, by default 1
-    n_iter : int, optional
-        number of iterations in TruncatedSVD, by default 5
-
-    Returns
-    -------
-    np.ndarray
-        Denoised array of same shape
-    """
-    img_shape = arr.shape[1:]
-    X = arr.reshape(arr.shape[0], -1)
-
-    svd = TruncatedSVD(n_components=n_components, random_state=42, n_iter=n_iter)
-    svd.fit(X)
-    coeffs = svd.transform(X)
-
-    bg_full = svd.components_
-    bg_scaled = (
-        coeffs[:, :important_components] @ bg_full[:important_components, :]
-    ).reshape(arr.shape[0], *img_shape)
-
-    return _apply_mask(arr - bg_scaled, radius=radius, center=center)
+        with h5py.File(output_cxi, "w") as h5fout:
+            h5fout.create_dataset(
+                cxi_path,
+                shape,
+                compression=None,
+                data=new_data,
+                chunks=chunks,
+            )
+        chunk_idx += 1
 
 
 def main(args):
@@ -621,7 +304,7 @@ def main(args):
     parser.add_argument(
         "--datapath", type=str, help="Path to your data inside a cxi file"
     )
-    parser.add_argument("--center", type=str, help="Center position", default=None)
+    parser.add_argument("--center", type=str, help="Center position", default="719.9 711.5")
     parser.add_argument(
         "--chunksize",
         type=int,
@@ -684,8 +367,9 @@ def main(args):
     center = list(center)
 
     profiles_ndarray = lst2profiles_ndarray(
-        args.input_lst, center=center, cxi_path=args.datapath, chunksize=args.chunksize
+        args.input_lst, center=center, cxi_path=args.datapath, h5_path=args.datapath, chunksize=args.chunksize
     )
+    print("Clustering images using their radial profiles", file=sys.stderr)
     image_lists_list = cluster_ndarray(
         profiles_ndarray,
         output_prefix=args.output_lst_prefix,
@@ -699,8 +383,9 @@ def main(args):
         denoise_lst(
             input_lst=list_to_denoise,
             center=center,
-            denoiser=args.denoiser,
+            denoiser_type=args.denoiser,
             cxi_path=args.datapath,
+            h5_path=args.datapath,
             output_cxi_prefix=args.out_prefix,
             chunksize=args.chunksize,
             zero_negative=args.zero_negative,
@@ -714,4 +399,3 @@ if __name__ == "__main__":
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", category=Warning)
         main(sys.argv[1:])
-
