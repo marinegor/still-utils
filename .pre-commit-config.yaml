@@ -2,7 +2,7 @@
 # See https://pre-commit.com/hooks.html for more hooks
 repos:
 -   repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v2.4.0
+    rev: v3.2.0
     hooks:
     -   id: trailing-whitespace
     -   id: end-of-file-fixer
@@ -10,11 +10,11 @@ repos:
     -   id: check-added-large-files
     -   id: requirements-txt-fixer
 -   repo: https://github.com/psf/black
-    rev: 19.3b0
+    rev: 20.8b1
     hooks:
     -   id: black
 -   repo: git://github.com/detailyang/pre-commit-shell
-    rev: v1.0.6
+    rev: 1.0.5
     hooks:
     - id: shell-lint
       args: [--format=json]
