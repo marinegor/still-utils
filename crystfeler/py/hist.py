@@ -20,7 +20,7 @@ def plot_hist(
 
     Arguments:
         input_array {list} -- input list of numbers
-    
+
     Keyword Arguments:
         bins {int} -- number of bins (=lines on output) (default: {50})
         width {int} -- histogram width(=maximum line length) (default: {140})
@@ -45,7 +45,7 @@ def plot_hist(
 def main(args):
     """
     The main function
-    
+
     Arguments:
         args {List[str]} -- input arguments for main
     """

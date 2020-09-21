@@ -5,14 +5,12 @@ from imagereader import apply_mask
 
 
 class AbstractDenoiser(ABC):
-
     @abstractmethod
     def denoise(self, data, center, radius):
         pass
 
 
 class NMFDenoiser(AbstractDenoiser):
-
     def __init__(self, n_components=5, important_components=1):
         self.n_components = n_components
         self.important_components = important_components
@@ -52,23 +50,23 @@ class NMFDenoiser(AbstractDenoiser):
 
         bg_full = nmf.components_
         bg_scaled = (
-                coeffs[:, :self.important_components] @ bg_full[:self.important_components, :]
+            coeffs[:, : self.important_components]
+            @ bg_full[: self.important_components, :]
         ).reshape(data.shape[0], *img_shape)
 
         return apply_mask(data - bg_scaled, radius=radius, center=center)
 
 
 class SVDDenoiser(AbstractDenoiser):
-
-    def __init__(self, n_components=5, important_components=1, n_iter=5, random_state=42):
+    def __init__(
+        self, n_components=5, important_components=1, n_iter=5, random_state=42
+    ):
         self.n_components = n_components
         self.important_components = important_components
         self.n_iter = n_iter
         self.random_state = random_state
 
-    def denoise(
-            self, data, center, radius=45
-    ):
+    def denoise(self, data, center, radius=45):
         """
         svd_denoise performs SVD-based denoising of input array
         - (N, M, M) image series --> (N, M**2) flattened images
@@ -99,20 +97,24 @@ class SVDDenoiser(AbstractDenoiser):
         img_shape = data.shape[1:]
         X = data.reshape(data.shape[0], -1)
 
-        svd = TruncatedSVD(n_components=self.n_components, random_state=self.random_state, n_iter=self.n_iter)
+        svd = TruncatedSVD(
+            n_components=self.n_components,
+            random_state=self.random_state,
+            n_iter=self.n_iter,
+        )
         svd.fit(X)
         coeffs = svd.transform(X)
 
         bg_full = svd.components_
         bg_scaled = (
-                coeffs[:, :self.important_components] @ bg_full[:self.important_components, :]
+            coeffs[:, : self.important_components]
+            @ bg_full[: self.important_components, :]
         ).reshape(data.shape[0], *img_shape)
 
         return apply_mask(data - bg_scaled, radius=radius, center=center)
 
 
 class PercentileDenoiser(AbstractDenoiser):
-
     def __init__(self, percentile=45, alpha=5e-2):
         self.percentile = percentile
         self.alpha = alpha
@@ -220,4 +222,3 @@ class PercentileDenoiser(AbstractDenoiser):
                 for i in range(arr.shape[0])
             ]
         )
-

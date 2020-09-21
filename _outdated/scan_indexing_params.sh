@@ -35,10 +35,9 @@ for snr in "${SNR[@]}"; do
     		--threshold="$threshold" \
     		--highres="$highres" \
     		--indexing=mosflm,dirax,xds"
-			echo EXECUTING: 
+			echo EXECUTING:
 			echo "$string"
 			eval "$string"
 		done
 	done
 done
-

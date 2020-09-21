@@ -5,7 +5,6 @@ from abc import ABC, abstractmethod
 
 
 class ImageReader(ABC):
-
     @abstractmethod
     def next_reader(self, reader):
         pass
@@ -32,7 +31,6 @@ class AbstractImageReader(ImageReader):
 
 
 class CXIReader(AbstractImageReader):
-
     def __init__(self, path_to_data=None):
         if path_to_data:
             self.path_to_data = path_to_data
@@ -42,7 +40,7 @@ class CXIReader(AbstractImageReader):
     def get_image(self, path):
         if not path.startswith("/"):
             path = os.getcwd() + path
-        if (' //' in path) and path.split(' //')[0].endswith(".cxi"):
+        if (" //" in path) and path.split(" //")[0].endswith(".cxi"):
             return self._get_event(path)
         else:
             return super().get_image(path)
@@ -64,7 +62,6 @@ class CXIReader(AbstractImageReader):
 
 
 class CBFReader(AbstractImageReader):
-
     def get_image(self, path):
         if path.endswith(".cbf"):
             return cbf.read(path).data
@@ -73,7 +70,6 @@ class CBFReader(AbstractImageReader):
 
 
 class H5Reader(AbstractImageReader):
-
     def __init__(self, path_to_data=None):
         if path_to_data:
             self.path_to_data = path_to_data
@@ -129,5 +125,5 @@ def apply_mask(np_arr, center=(719.9, 711.5), radius=45):
         return (np_arr * mask.reshape(1, *shape)).astype(np_arr.dtype)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     pass

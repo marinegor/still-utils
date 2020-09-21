@@ -84,8 +84,8 @@ def update_geom_params(
     inplace=True,
 ) -> str:
     """
-    Given an initial dict of values, 
-    generates dict of geometry params, 
+    Given an initial dict of values,
+    generates dict of geometry params,
     given certain alpha, beta, coffset, corner_x and corner_y
 
     Arguments:

@@ -117,10 +117,10 @@ def main(args):
             f"Input and output formats should be different, yours are both {args.inf}"
         )
 
-    if args.inf == 'yaml':
-        yaml2geom(args.input_file, output='-')
+    if args.inf == "yaml":
+        yaml2geom(args.input_file, output="-")
     else:
-        geom2yaml(args.input_file, output='-')
+        geom2yaml(args.input_file, output="-")
 
 
 if __name__ == "__main__":

@@ -133,10 +133,10 @@ def main(args):
         "--rbeta", type=str, default="0.0 0.0", help="Range for beta (in degrees)"
     )
     parser.add_argument(
-        "--rcorner_x", type=str, default=None, help="Range for corner_x (in pixels)",
+        "--rcorner_x", type=str, default=None, help="Range for corner_x (in pixels)"
     )
     parser.add_argument(
-        "--rcorner_y", type=str, default=None, help="Range for corner_y (in pixels)",
+        "--rcorner_y", type=str, default=None, help="Range for corner_y (in pixels)"
     )
     parser.add_argument(
         "--rcoffset",

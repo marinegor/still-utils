@@ -10,7 +10,7 @@ from typing import List
 def main(args: List[str]):
     """
     The main function
-    
+
     Arguments:
         args {List[str]} -- input arguments for main
     """

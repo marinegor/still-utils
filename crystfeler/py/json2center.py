@@ -151,7 +151,7 @@ def circle(points: np.ndarray, acute_angle=True, presumable_centre=None) -> np.n
     Returns:
         np.ndarray -- (x,y,R)
     """
-    x1, y1, x2, y2, x3, y3 = points.reshape(-1,)
+    x1, y1, x2, y2, x3, y3 = points.reshape(-1)
 
     A = np.array([[x3 - x1, y3 - y1], [x3 - x2, y3 - y2]])
     Y = np.array(
@@ -198,7 +198,7 @@ def main(args: List[str]):
         help="Number of times algorithm will try to guess center choosing 3 random points",
     )
     parser.add_argument(
-        "input_json", type=str, help="input json file, produced by streampeaks2json.py",
+        "input_json", type=str, help="input json file, produced by streampeaks2json.py"
     )
     parser.add_argument(
         "--rmin", type=int, default=None, help="Minimum radius for center estimation"
@@ -219,7 +219,7 @@ def main(args: List[str]):
         help="Presumable center ss for acute angle rejection",
     )
     parser.add_argument(
-        "--plot", help="Whether to save plots or not", action="store_true",
+        "--plot", help="Whether to save plots or not", action="store_true"
     )
     parser.add_argument(
         "--nbins", type=int, default=1000, help="Number of bins for radial binning"

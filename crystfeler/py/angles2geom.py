@@ -91,8 +91,8 @@ def update_geom_params_dict(
     relative=True,
 ) -> dict:
     """
-    Given an initial dict of values, 
-    generates dict of geometry params, 
+    Given an initial dict of values,
+    generates dict of geometry params,
     given certain alpha, beta, coffset, corner_x and corner_y
 
     Arguments:
@@ -138,9 +138,10 @@ def update_geom_params_dict(
         corner_y = corner_y_rot
     if coffset is None:  # keep the centre unmoved
         coffset = (
-            (clen_rot - initial_geom["clen"] * initial_geom["res"])
-            / initial_geom["res"]
-        )  # back to meters
+            clen_rot - initial_geom["clen"] * initial_geom["res"]
+        ) / initial_geom[
+            "res"
+        ]  # back to meters
     if relative:
         if corner_x is not None:
             corner_x = initial_geom["corner_x"] + corner_x

@@ -16,11 +16,11 @@ def _peaks_from_ndarray(
 ) -> [np.ndarray, np.ndarray, np.ndarray]:
     """
     Returns positions of peaks -- pixels that are larger than any of their neighbours within a certain radius
-    
+
     Arguments:
         ndarr {np.ndarray} -- input array. Last two coordinates are treated as `x` and `y`.
         size {int} -- size of square of neighbours will be (2n+1)
-    
+
     Returns:
         [np.ndarr, np.ndarr, np.ndarr] -- return value of np.nonzero. Shape corresponds to input array shape
     """
@@ -39,10 +39,10 @@ def _peaks_from_ndarray(
 def peak_profiles(nparray: np.ndarray, size_compare=1, size_return=3) -> list:
     """
     Returns peak profiles as (n, x, y) tensor, with n=nparray.shape[0], and x=y=2*size+1
-    
+
     Arguments:
         nparray {np.ndarray} -- input numpy array with full images
-    
+
     Returns:
         dict -- peak profiles
     """

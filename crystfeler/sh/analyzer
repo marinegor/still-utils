@@ -13,7 +13,7 @@ Please contact me via marin@phystech.edu or github, if you know any issue.
 It provides you with extensive information about your stream file
 and merging statistics without usage of GUI.
 
-It is written in bash and uses only standard CrystFEL utils, such as 
+It is written in bash and uses only standard CrystFEL utils, such as
 process_hkl, partialator, compare_hkl, etc.
 
 ------
@@ -21,7 +21,7 @@ Usage:
 ------
 	./analyzer -i output.stream --merging process_hkl --lowres 30.0 --highres 3.0 -y mmm --pushres 2.5
 
-		Provides you with output.stream indexing stats 
+		Provides you with output.stream indexing stats
 		and performs merging with process_hkl
 
 
@@ -39,7 +39,7 @@ Workflow parameters:
 	--cell, -p
 		Unit cell file (used for compare_hkl only)
 	--merging
-		How you want your merging to be done. 
+		How you want your merging to be done.
 		Options:
 			none:	no merging will be performed
 			process_hkl: merging with process_hkl will be performed
@@ -85,7 +85,7 @@ Merging parameters:
 		Quote from process_hkl man:
 		 \"Perform a second pass through the input, merging crystals only if their correlation with the initial model is at least n.\"
 	-y, --symmetry
-		Symmetry for merging. 
+		Symmetry for merging.
 		Used by process_hkl/partialator and compare_hkl and check_hkl.
 	--model
 		Model for partialator. Should be either 'unity' or 'xsphere'.
@@ -488,7 +488,7 @@ function rate() {
 		STRING="compare_hkl ${HKL_TEMPLATE}1 ${HKL_TEMPLATE}2 ${COMPARE_HKL_PARAMS} --nshells 1 --fom ${fom} &> ${LOGS}/compare_hkl_${fom}_full.log"
 		echo "${STRING}" >>"${LOGS}/execution.log"
 		eval "${STRING}"
-		mv shells.dat "${LOGS}/shells_${fom}_full.dat" &>/dev/null 
+		mv shells.dat "${LOGS}/shells_${fom}_full.dat" &>/dev/null
 	done
 	STRING="check_hkl ${HKL_TEMPLATE} ${COMPARE_HKL_PARAMS} --nshells 1 &> ${LOGS}/check_hkl_full.log"
 	echo "${STRING}" >>"${LOGS}/execution.log"

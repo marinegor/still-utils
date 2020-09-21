@@ -3,12 +3,12 @@
 """:"
 if [ -x "$(command -v pypy3)" ]; then
     echo "Running with pypy3"
-    exec pypy3 $0 "$@" 
+    exec pypy3 $0 "$@"
 else
     echo "Running with python3. Consider using pypy (2x faster): http://pypy.org/download.html#installing"
     In short, it is as easy as `sudo apt-add repository ppa:pypy/ppa; sudo apt-get update; sudo apt-get install pypy3`
     After that, don't forget to do `sudo apt-get install python3-tqdm`, otherwise it won't run.
-    exec env python3 $0 "$@" 
+    exec env python3 $0 "$@"
 fi
 ":"""
 
@@ -97,7 +97,12 @@ def parse_stream(filename: str, threshold: float, debug: bool) -> Tuple[Dict, Di
                 if float(intensity_chunk) >= threshold:
                     if current_event is not None:
                         answ_chunks[
-                            (current_filename, current_event, current_serial_number, str(chunk_peak_number))
+                            (
+                                current_filename,
+                                current_event,
+                                current_serial_number,
+                                str(chunk_peak_number),
+                            )
                         ] = {
                             "fs": float(fs),
                             "ss": float(ss),
@@ -105,7 +110,13 @@ def parse_stream(filename: str, threshold: float, debug: bool) -> Tuple[Dict, Di
                             "panel": panel,
                         }
                     else:
-                        answ_chunks[(current_filename, current_serial_number, str(chunk_peak_number))] = {
+                        answ_chunks[
+                            (
+                                current_filename,
+                                current_serial_number,
+                                str(chunk_peak_number),
+                            )
+                        ] = {
                             "fs": float(fs),
                             "ss": float(ss),
                             "I": float(intensity_chunk),
@@ -121,7 +132,12 @@ def parse_stream(filename: str, threshold: float, debug: bool) -> Tuple[Dict, Di
                 if float(intensity_crystal) >= threshold:
                     if current_event is not None:
                         answ_crystals[
-                            (current_filename, current_event, current_serial_number, str(crystal_peak_number))
+                            (
+                                current_filename,
+                                current_event,
+                                current_serial_number,
+                                str(crystal_peak_number),
+                            )
                         ] = {
                             "fs": float(fs),
                             "ss": float(ss),
@@ -129,7 +145,13 @@ def parse_stream(filename: str, threshold: float, debug: bool) -> Tuple[Dict, Di
                             "panel": panel,
                         }
                     else:
-                        answ_crystals[(current_filename, current_serial_number, str(crystal_peak_number))] = {
+                        answ_crystals[
+                            (
+                                current_filename,
+                                current_serial_number,
+                                str(crystal_peak_number),
+                            )
+                        ] = {
                             "fs": float(fs),
                             "ss": float(ss),
                             "I": float(intensity_crystal),

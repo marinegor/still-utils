@@ -140,7 +140,7 @@ def main(args: List[str]):
     )
     parser.add_argument("stream", help="Input stream")
     parser.add_argument(
-        "--out", default=None, help="Out list of multiple hits in a separate file",
+        "--out", default=None, help="Out list of multiple hits in a separate file"
     )
     parser.add_argument(
         "--rmsd",

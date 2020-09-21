@@ -19,4 +19,3 @@ for geom in ${GEOMS_FOLDER}/*.geom; do
 	runner "${YAML_UPD}" &> /dev/null
 	sleep 2s; # this one is to prevent output folders from having same name
 done | tqdm | wc -l
-

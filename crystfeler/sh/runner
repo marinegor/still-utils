@@ -151,7 +151,7 @@ if [[ "${SLURM}" == "1" ]]; then
 	fi
 
 	# print headers to worker script
-	
+
 	# here echo header
 	current_worker=${CURRENT_LOGDIR}/worker.sh
 	cat ${SLURM_HEADER_FILE} >> "${current_worker}"
@@ -166,7 +166,7 @@ if [[ "${SLURM}" == "1" ]]; then
 	if [[ ! -z $EXCLUDE_NODES ]]; then
 		echo "#SBATCH --exclude=${EXCLUDE_NODES}" >> ${current_worker}
 	fi
-	if [[ -z $MAX_NODES ]]; then 
+	if [[ -z $MAX_NODES ]]; then
 		echo "#SBATCH --array=1-${LST_NUM}" >> ${current_worker}
 	else
 		echo "#SBATCH --array=1-${LST_NUM}%${MAX_NODES}" >> ${current_worker}
@@ -182,7 +182,7 @@ if [[ "${SLURM}" == "1" ]]; then
 	if [[ "${MERGE_OFFLINE}" == "FALSE" ]]; then
 
 		current_stream=${CURRENT_LOGDIR}/stream_\${TASK_ID}.stream
-	
+
 		echo "touch ${current_stream}" >> "${current_worker}"
 		echo "tail -f ${current_stream} --pid=\$\$ | pylock ${STREAMDIR}/${PROJECT_NAME}_${time}.stream & disown" >> "${current_worker}"
 
@@ -190,7 +190,7 @@ if [[ "${SLURM}" == "1" ]]; then
 
 	# writing multiple-worker execution strings
 
-		
+
 	current_stream=${CURRENT_LOGDIR}/stream_\${TASK_ID}.stream
 	current_lst=${CURRENT_LOGDIR}/list_\${TASK_ID}.lst
 
@@ -237,7 +237,7 @@ if [[ "${SLURM}" == "1" ]]; then
 			echo \"Found \${strm}\"
 			cat \${strm} >> ${STREAMDIR}/${PROJECT_NAME}_${time}.stream
 		done" >> "${merger}"
-		
+
 		if [[ "${DEBUG}" == "FALSE" ]]; then
 			sleep 5
 			sbatch "${merger}"
@@ -251,6 +251,6 @@ else
 	EXECSTRING="${BASEEXECSTRING} -o ${STREAMDIR}/${PROJECT_NAME}_${time}.stream -i ${LST}"
 	EXECSTRING="${EXECSTRING} --peaks=${PEAKS} --indexing=${INDEXING}"
 	EXECSTRING="${EXECSTRING} -j ${NPROC}"
-	echo "$EXECSTRING"  
+	echo "$EXECSTRING"
 	eval "${EXECSTRING}" |& tee "${LOGDIR}/log.indexamajig_${time}"
 fi
