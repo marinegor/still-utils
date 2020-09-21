@@ -13,8 +13,8 @@ repos:
     rev: 20.8b1
     hooks:
     -   id: black
--   repo: git://github.com/detailyang/pre-commit-shell
-    rev: 1.0.5
-    hooks:
-    - id: shell-lint
-      args: [--format=json]
+# -   repo: git://github.com/detailyang/pre-commit-shell
+    # rev: 1.0.5
+    # hooks:
+    # - id: shell-lint
+      # args: [--format=json]
