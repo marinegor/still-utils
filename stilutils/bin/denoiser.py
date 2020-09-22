@@ -301,7 +301,8 @@ def main(args):
     """The main function"""
 
     parser = argparse.ArgumentParser(
-        description="Denoises images using simple percentile filter"
+        description="Denoises images using simple percentile filter",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
         "input_lst",
