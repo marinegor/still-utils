@@ -11,8 +11,8 @@ from scipy.spatial.distance import pdist
 from tqdm import tqdm
 from typing import Union
 
-from imagereader import CXIReader, CBFReader, H5Reader
-from denoisers import NMFDenoiser, PercentileDenoiser, SVDDenoiser
+from stilutils.utils.imagereader import CXIReader, CBFReader, H5Reader
+from stilutils.utils.denoisers import NMFDenoiser, PercentileDenoiser, SVDDenoiser
 
 
 class ImageLoader:

@@ -1,7 +1,8 @@
 from abc import ABC, abstractmethod
 from sklearn.decomposition import NMF, TruncatedSVD
 import numpy as np
-from imagereader import apply_mask
+
+from .imagereader import apply_mask
 
 
 class AbstractDenoiser(ABC):
