@@ -16,7 +16,7 @@ class AbstractDenoiser(ABC):
     def transform(self, data, bg, scales):
         pass
 
-    def _bin_scale(self, arr, b, alpha=0.01, num_iterations=10):
+    def _bin_scale(self, arr, b, alpha=0.01, num_iterations=50, mm=1e10):
         """
         _bin_scale binary search for proper scale factor
 
@@ -42,9 +42,10 @@ class AbstractDenoiser(ABC):
         def count_negative(scale):
             return (arr - scale * b < 0).sum()
 
-        l, r, m = 0, 1, 2
+        l, r, m = 0, mm, mm / 2.0
 
         for _ in range(num_iterations):
+            # print(l,r,m)
             m = (l + r) / 2
             mv = count_negative(m)
 
@@ -55,17 +56,14 @@ class AbstractDenoiser(ABC):
 
         return l
 
-    def _scalefactors(self, arr, bg, alpha=0.01, num_iterations=10):
+    def _scalefactors(self, arr, bg, alpha=0.01):
         """\
         Find proper scalefactor for an image
         so that the share of negative pixels in resulting difference
         is less than alpha
         """
         return np.array(
-            [
-                self._bin_scale(arr[i], bg, alpha=alpha, num_iterations=num_iterations)
-                for i in range(arr.shape[0])
-            ]
+            [self._bin_scale(arr[i], bg, alpha=alpha) for i in range(arr.shape[0])]
         ).reshape(1, -1)
 
 
@@ -144,6 +142,7 @@ class NMFDenoiser(AbstractDenoiser):
             Denoised data
         """
         img_shape = data.shape[1:]
+        data = apply_mask(data, center=center, radius=radius)
 
         if self._bg is None:
             _ = self.fit(data=data, center=center, radius=radius)
@@ -151,11 +150,11 @@ class NMFDenoiser(AbstractDenoiser):
         if alpha is None:
             coeffs = self._scales
         else:
+            # can not determine scalefactor with binary search, unless the background is 2D
+            self._bg = self._bg.sum(axis=0).reshape((-1, *img_shape))
             coeffs = self._scalefactors(arr=data, bg=self._bg, alpha=alpha)
 
-        bg_scaled = np.dot(self._bg.reshape(*(img_shape), 1), coeffs).reshape(
-            (-1, *img_shape)
-        )
+        bg_scaled = np.dot(self._bg.T, coeffs).T
 
         return data - bg_scaled
 
@@ -241,6 +240,7 @@ class SVDDenoiser(AbstractDenoiser):
             Denoised data
         """
         img_shape = data.shape[1:]
+        data = apply_mask(data, center=center, radius=radius)
 
         if self._bg is None:
             _ = self.fit(data=data, center=center, radius=radius)
@@ -248,13 +248,14 @@ class SVDDenoiser(AbstractDenoiser):
         if alpha is None:
             coeffs = self._scales
         else:
+            # can not determine scalefactor with binary search, unless the background is 2D
+            self._bg = self._bg.sum(axis=0).reshape((-1, *img_shape))
             coeffs = self._scalefactors(arr=data, bg=self._bg, alpha=alpha)
+            self._scales = coeffs
 
-        bg_scaled = np.dot(self._bg.reshape(*(img_shape), 1), coeffs).reshape(
-            (-1, *img_shape)
-        )
+        bg_scaled = np.dot(self._bg.T, coeffs).T
 
-        return data - bg_scaled
+        return apply_mask(data, center=center, radius=radius) - bg_scaled
 
 
 class PercentileDenoiser(AbstractDenoiser):
