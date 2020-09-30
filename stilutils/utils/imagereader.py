@@ -1,6 +1,7 @@
 import h5py
 import cbf
 import os
+import numpy as np
 from abc import ABC, abstractmethod
 
 
