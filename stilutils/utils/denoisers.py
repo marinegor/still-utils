@@ -71,6 +71,7 @@ class AbstractDenoiser(ABC):
 
 class NMFDenoiser(AbstractDenoiser):
     def __init__(self, n_components=5, important_components=1):
+        super().__init__()
         self.n_components = n_components
         self.important_components = important_components
 
@@ -161,6 +162,7 @@ class SVDDenoiser(AbstractDenoiser):
     def __init__(
         self, n_components=5, important_components=1, n_iter=5, random_state=42
     ):
+        super().__init__()
         self.n_components = n_components
         self.important_components = important_components
         self.n_iter = n_iter
@@ -255,6 +257,7 @@ class SVDDenoiser(AbstractDenoiser):
 
 class PercentileDenoiser(AbstractDenoiser):
     def __init__(self, percentile=45, alpha=1e-2):
+        super().__init__()
         self._percentile = percentile
         self._alpha = alpha
 
