@@ -66,7 +66,7 @@ class AbstractDenoiser(ABC):
                 self._bin_scale(arr[i], bg, alpha=alpha, num_iterations=num_iterations)
                 for i in range(arr.shape[0])
             ]
-        )
+        ).reshape(1, -1)
 
 
 class NMFDenoiser(AbstractDenoiser):
@@ -101,18 +101,18 @@ class NMFDenoiser(AbstractDenoiser):
         data_m = apply_mask(data, center=center, radius=radius)
         X = data_m.reshape(data_m.shape[0], -1)
 
-        nmf = NMF(n_components=self.n_components)
+        nmf = NMF(
+            n_components=self.n_components,
+        )
+
         nmf.fit(X)
         coeffs = nmf.transform(X)
-
-        # memorize scalefactors in order not to repeat factorization later
-        self._scales = coeffs[: self.important_components]
-
-        bg_full = (
-            nmf.components_[: self.important_components]
-            .sum(axis=0)
-            .reshape(data_m.shape[1:])
+        bg_full = nmf.components_[: self.important_components, :].reshape(
+            (-1, *data_m.shape[1:])
         )
+
+        # memorize scalefactors and background
+        self._scales = coeffs[:, : self.important_components].reshape(1, -1)
         self._bg = bg_full
 
         return bg_full
@@ -153,7 +153,9 @@ class NMFDenoiser(AbstractDenoiser):
         else:
             coeffs = self._scalefactors(arr=data, bg=self._bg, alpha=alpha)
 
-        bg_scaled = (coeffs @ self._bg).reshape(data.shape[0], *img_shape)
+        bg_scaled = np.dot(self._bg.reshape(*(img_shape), 1), coeffs).reshape(
+            (-1, *img_shape)
+        )
 
         return data - bg_scaled
 
@@ -202,14 +204,12 @@ class SVDDenoiser(AbstractDenoiser):
 
         svd.fit(X)
         coeffs = svd.transform(X)
-        bg_full = (
-            svd.components_[: self.important_components]
-            .sum(axis=0)
-            .reshape(data_m.shape[1:])
+        bg_full = svd.components_[: self.important_components, :].reshape(
+            (-1, *data_m.shape[1:])
         )
 
         # memorize scalefactors and background
-        self._scales = coeffs[: self.important_components]
+        self._scales = coeffs[:, : self.important_components].reshape(1, -1)
         self._bg = bg_full
 
         return bg_full
@@ -250,7 +250,9 @@ class SVDDenoiser(AbstractDenoiser):
         else:
             coeffs = self._scalefactors(arr=data, bg=self._bg, alpha=alpha)
 
-        bg_scaled = (coeffs @ self._bg).reshape(data.shape[0], *img_shape)
+        bg_scaled = np.dot(self._bg.reshape(*(img_shape), 1), coeffs).reshape(
+            (-1, *img_shape)
+        )
 
         return data - bg_scaled
 
