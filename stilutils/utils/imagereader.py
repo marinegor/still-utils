@@ -85,46 +85,5 @@ class H5Reader(AbstractImageReader):
             return super().get_image(path)
 
 
-def apply_mask(np_arr, center=(719.9, 711.5), radius=45):
-    """
-    _apply_mask applies circular mask to a single image or image series
-
-    Parameters
-    ----------
-    np_arr : np.ndarray
-        Input array to apply mask to
-    center : tuple
-        (corner_x, corner_y) pair of floats
-    r : int, optional
-        radius of pixels to be zeroed, by default 45
-
-    Returns
-    -------
-    np.ndarray
-        Same shaped and dtype'd array as input
-    """
-
-    if len(np_arr.shape) == 3:
-        shape = np_arr.shape[1:]
-        shape_type = 3
-    else:
-        shape = np_arr.shape
-        shape_type = 2
-    mask = np.ones(shape)
-
-    rx, ry = map(int, center)
-    r = radius
-    for x in range(rx - r, rx + r):
-        for y in range(ry - r, ry + r):
-            if (x - rx) ** 2 + (y - ry) ** 2 <= r ** 2:
-                mask[x][y] = 0
-
-    if shape_type == 2:
-        return (np_arr * mask).astype(np_arr.dtype)
-    else:
-        mask = mask.reshape((*shape, 1))
-        return (np_arr * mask.reshape(1, *shape)).astype(np_arr.dtype)
-
-
 if __name__ == "__main__":
     pass
