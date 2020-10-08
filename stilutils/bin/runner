@@ -98,8 +98,10 @@ for var in "$@"; do
 done
 # check if path is absolute, if not -- make it
 if ! [[ ${GEOM::1} == "/" ]]; then GEOM="${PWD}/${GEOM}"; fi
-if ! [[ ${CELL::1} == "/" ]]; then CELL="${PWD}/${CELL}"; fi
 if ! [[ ${LST::1} == "/" ]]; then LST="${PWD}/${LST}"; fi
+
+# check if path is absolute and CELL is present, if not -- make it
+if ! [[ ${CELL::1} == "/" ]] && [[ ${CELL} != "none" ]]; then CELL="${PWD}/${CELL}"; fi
 
 # set default non-influencing SNR & THRESHOLD if cxi or h5
 
@@ -125,13 +127,18 @@ LST="input.lst";
 # Start building the indexamajig command
 BASEEXECSTRING="indexamajig \
 -g ${GEOM} \
--p ${CELL} \
 --min-snr=${SNR} \
 --threshold=${THRESHOLD} \
 --highres=${HIGHRES} \
 --temp-dir="/tmp" \
 --min-peaks=${MINPEAKS} \
 ${OTHERPARAMS}"
+
+# if cell is not set, omit it from indexamajig string
+if [[ ${CELL} != "none" ]]; then
+	BASEEXECSTRING="${BASEEXECSTRING} \
+-p ${CELL}"
+fi
 
 touch "streams/${PROJECT_NAME}_${time}.stream"
 ln -sf "streams/${PROJECT_NAME}_${time}.stream" laststream
