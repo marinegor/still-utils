@@ -20,6 +20,7 @@ test
 # Python stuff
 __pycache__
 .vscode
+.ipynb_checkpoints
 
 # Archives
 *.zip
