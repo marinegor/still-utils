@@ -11,164 +11,14 @@ from scipy.spatial.distance import pdist
 from tqdm import tqdm
 from typing import Union
 
-from stilutils.utils.imagereader import CXIReader, CBFReader, H5Reader
-from stilutils.utils.denoisers import NMFDenoiser, PercentileDenoiser, SVDDenoiser
-
-
-class ImageLoader:
-    """
-    ImageLoader class that abstracts the image loading process,
-    loading images one by one and returning a handle to write them
-    """
-
-    def __init__(self, input_list, chunksize=100, cxi_path=None, h5_path=None):
-        self.input_list = input_list
-        self.chunksize = chunksize
-
-        # initialize chain of image readers
-        self.cxi_reader = CXIReader(path_to_data=cxi_path)
-        self.cbf_reader = CBFReader()
-        self.h5_reader = H5Reader(path_to_data=h5_path)
-        self.cxi_reader.next_reader(self.cbf_reader).next_reader(self.h5_reader)
-        self.image_reader = self.cxi_reader
-
-        # load all frames from input list
-        data = set()
-        with open(input_list, mode="r") as fin:
-            for line in fin:
-                if line.rstrip().endswith(".cxi"):
-                    num_events = self.cxi_reader.get_events_number(line.rstrip())
-                    for i in range(num_events):
-                        data.add(line.rstrip() + " //" + str(i))
-                else:
-                    data.add(line.rstrip())
-
-        self._data = list(data)
-
-    def __iter__(self):
-        return self
-
-    def __next__(self, mode="r"):
-        """Here the magic happens that helps to iterate"""
-        """
-        Pseudocode:
-
-        data_to_return, handles_to_return = self.data[:chunksize]
-        self.data = self.data - data_to_return
-        return data_to_return, handles_to_return
-        """
-        current_chunk_list = self._data[: self.chunksize]
-        if len(current_chunk_list) == 0:
-            raise StopIteration
-        result = []
-        for event in current_chunk_list:
-            result.append(self.image_reader.get_image(event))
-        self._data = self._data[self.chunksize :]
-        result = np.stack(result, axis=0)
-        return current_chunk_list, result
-
-
-def cluster_ndarray(
-    profiles_arr,
-    output_prefix="clustered",
-    output_lists=False,
-    threshold=25,
-    criterion="maxclust",
-    min_num_images=50,
-):
-    """
-    cluster_ndarray clusters images based on their radial profiles
-
-    Parameters
-    ----------
-    profiles_arr : np.ndarray
-        radial profiles (or any other profiles, honestly) 2D np.ndarray
-    output_prefix : str, optional
-        output prefix for image lists0, by default "clustered"
-    output_lists : bool, optional
-        whether to output lists as text fiels, by default False
-    threshold : int, optional
-        distance according to criterion, by default 25
-    criterion : str, optional
-        criterion for clustering, by default "maxclust"
-    min_num_images : int, optional
-        minimal number of images in single cluster, others will go to singletone, by default 50
-
-    Returns
-    -------
-    Union[dict, list]
-        Either:
-           - Dictionary {cluster_num:[*image_and_event_lines]} -- if output_lists == False
-           - List [output_list_1.lst, output_list_2.lst, ...] -- if output_lists == True
-    """
-    profiles = np.array([elem[1] for elem in profiles_arr])
-    names = np.array([elem[0] for elem in profiles_arr])
-
-    # this actually does clustering
-    Z = ward(pdist(profiles))
-    idx = fcluster(Z, t=threshold, criterion=criterion)
-
-    # output lists
-    clusters = defaultdict(lambda: set())
-    out_lists = set()
-    for list_idx in tqdm(list(set(idx)), desc="Output lists"):
-        belong_to_this_idx = np.where(idx == list_idx)[0]
-        if len(belong_to_this_idx) < min_num_images:
-            fout_name = f"{output_prefix}_singletone.lst"
-            out_cluster_idx = -1
-        else:
-            fout_name = f"{output_prefix}_{list_idx}.lst"
-            out_cluster_idx = list_idx
-        out_lists.add(fout_name)
-        try:
-            os.remove(fout_name)
-        except OSError:
-            pass
-
-        # print output lists if you want to
-        for name in names[belong_to_this_idx]:
-            clusters[out_cluster_idx].add(name)
-        if output_lists:
-            with open(fout_name, "a") as fout:
-                print(*clusters[out_cluster_idx], sep="\n", file=fout)
-
-    if output_lists:
-        return list(out_lists)
-    else:
-        return clusters
-
-
-def _radial_profile(data, center, normalize=True):
-    """
-    _radial_profile returns radial profile of a 2D image
-
-    Parameters
-    ----------
-    data : np.ndarray
-        (M,N)-shaped np.ndarray
-    center : tuple
-        two float numbers as a center
-    normalize : bool, optional
-        whether to normalize images, by default True
-
-    Returns
-    -------
-    np.ndarray
-        1D numpy array
-    """
-    # taken from here: https://stackoverflow.com/questions/21242011/most-efficient-way-to-calculate-radial-profile
-    y, x = np.indices((data.shape))
-    r = np.sqrt((x - center[0]) ** 2 + (y - center[1]) ** 2)
-    r = r.astype(np.int)
-
-    tbin = np.bincount(r.ravel(), data.ravel())
-    nr = np.bincount(r.ravel())
-    radialprofile = tbin / nr
-
-    if normalize:
-        radialprofile = radialprofile / radialprofile.sum()
-
-    return radialprofile
+from stilutils.utils.imagereader import CXIReader, CBFReader, H5Reader, ImageLoader
+from stilutils.utils.denoisers import (
+    NMFDenoiser,
+    PercentileDenoiser,
+    SVDDenoiser,
+    _radial_profile,
+    cluster_ndarray,
+)
 
 
 def lst2profiles_ndarray(
@@ -217,6 +67,7 @@ def lst2profiles_ndarray(
 
 def denoise_lst(
     input_lst: str,
+    alpha=1e-2,
     center=None,
     radius=None,
     denoiser_type="nmf",
@@ -280,8 +131,8 @@ def denoise_lst(
     chunk_idx = 0
 
     for lst, data in loader:
-        new_data = denoiser.denoise(
-            data, center=center, radius=radius, **denoiser_kwargs
+        new_data = denoiser.transform(
+            data, center=center, radius=radius, alpha=alpha, **denoiser_kwargs
         ).astype(dtype)
 
         if zero_negative:
@@ -341,7 +192,7 @@ def main(args):
         "--alpha",
         type=float,
         help="Threshold for scale factor determination",
-        default=0.05,
+        default=0.01,
     )
     parser.add_argument(
         "--radius", type=int, default=45, help="Radius to apply mask in the center"
@@ -396,6 +247,7 @@ def main(args):
     for list_to_denoise in tqdm(image_lists_list, desc="Denoising each clustered list"):
         denoise_lst(
             input_lst=list_to_denoise,
+            alpha=args.alpha,
             center=center,
             denoiser_type=args.denoiser,
             cxi_path=args.datapath,
