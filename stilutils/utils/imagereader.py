@@ -85,45 +85,57 @@ class H5Reader(AbstractImageReader):
             return super().get_image(path)
 
 
-def apply_mask(np_arr, center=(719.9, 711.5), radius=45):
+class ImageLoader:
     """
-    _apply_mask applies circular mask to a single image or image series
-
-    Parameters
-    ----------
-    np_arr : np.ndarray
-        Input array to apply mask to
-    center : tuple
-        (corner_x, corner_y) pair of floats
-    r : int, optional
-        radius of pixels to be zeroed, by default 45
-
-    Returns
-    -------
-    np.ndarray
-        Same shaped and dtype'd array as input
+    ImageLoader class that abstracts the image loading process,
+    loading images one by one and returning a handle to write them
     """
 
-    if len(np_arr.shape) == 3:
-        shape = np_arr.shape[1:]
-        shape_type = 3
-    else:
-        shape = np_arr.shape
-        shape_type = 2
-    mask = np.ones(shape)
+    def __init__(self, input_list, chunksize=100, cxi_path=None, h5_path=None):
+        self.input_list = input_list
+        self.chunksize = chunksize
 
-    rx, ry = map(int, center)
-    r = radius
-    for x in range(rx - r, rx + r):
-        for y in range(ry - r, ry + r):
-            if (x - rx) ** 2 + (y - ry) ** 2 <= r ** 2:
-                mask[x][y] = 0
+        # initialize chain of image readers
+        self.cxi_reader = CXIReader(path_to_data=cxi_path)
+        self.cbf_reader = CBFReader()
+        self.h5_reader = H5Reader(path_to_data=h5_path)
+        self.cxi_reader.next_reader(self.cbf_reader).next_reader(self.h5_reader)
+        self.image_reader = self.cxi_reader
 
-    if shape_type == 2:
-        return (np_arr * mask).astype(np_arr.dtype)
-    else:
-        mask = mask.reshape((*shape, 1))
-        return (np_arr * mask.reshape(1, *shape)).astype(np_arr.dtype)
+        # load all frames from input list
+        data = set()
+        with open(input_list, mode="r") as fin:
+            for line in fin:
+                if line.rstrip().endswith(".cxi"):
+                    num_events = self.cxi_reader.get_events_number(line.rstrip())
+                    for i in range(num_events):
+                        data.add(line.rstrip() + " //" + str(i))
+                else:
+                    data.add(line.rstrip())
+
+        self._data = list(data)
+
+    def __iter__(self):
+        return self
+
+    def __next__(self, mode="r"):
+        """Here the magic happens that helps to iterate"""
+        """
+        Pseudocode:
+
+        data_to_return, handles_to_return = self.data[:chunksize]
+        self.data = self.data - data_to_return
+        return data_to_return, handles_to_return
+        """
+        current_chunk_list = self._data[: self.chunksize]
+        if len(current_chunk_list) == 0:
+            raise StopIteration
+        result = []
+        for event in current_chunk_list:
+            result.append(self.image_reader.get_image(event))
+        self._data = self._data[self.chunksize :]
+        result = np.stack(result, axis=0)
+        return current_chunk_list, result
 
 
 if __name__ == "__main__":
