@@ -17,17 +17,19 @@ from stilutils.utils.denoisers import (
     PercentileDenoiser,
     SVDDenoiser,
     _radial_profile,
+    _stride_profile,
     cluster_ndarray,
 )
 
 
 def lst2profiles_ndarray(
     input_lst: str,
-    center,
+    func=_radial_profile,
     cxi_path="/entry_1/data_1/data",
     h5_path="/data/rawdata0",
     chunksize=100,
     radius=45,
+    **func_kwargs,
 ) -> np.ndarray:
     """
     lst2profiles_ndarray converts CrystFEL list into 2D np.ndarray with following structure:
@@ -56,10 +58,14 @@ def lst2profiles_ndarray(
 
     profiles = []
 
-    for lst, data in tqdm(loader, desc="Converting images to radial profiles"):
+    with open(input_lst, "r") as fin:
+        total_num_lines = sum([1 for _ in fin])
+    for lst, data in tqdm(
+        loader, desc="Converting images to radial profiles", total=total_num_lines
+    ):
 
         for elem in zip(lst, data):
-            profile = _radial_profile(elem[1], center=center)
+            profile = func(elem[1], **func_kwargs)
             profiles.append([elem[0], profile])
 
     return profiles
@@ -231,7 +237,7 @@ def main(args):
         help="Quantile for percentile denoiser",
     )
     parser.add_argument(
-        "--dtype",
+        "--bg_dtype",
         choices=["float32", "uint16", "int32"],
         default="float32",
         help="Output numeric type",
@@ -262,7 +268,7 @@ def main(args):
         "--radius", type=float, help="Mask radius", default=0
     )
     parser.add_argument(
-        "--dtype",
+        "--subtract_dtype",
         choices=["float32", "uint16", "int32"],
         default="uint16",
         help="Output numeric type",
@@ -284,16 +290,7 @@ def main(args):
         default=True,
     )
 
-    # parser.add_argument(
-    # "--center", type=str, help="Center position", default="719.9 711.5"
-    # )
-    # parser.add_argument(
-    # "--chunksize",
-    # type=int,
-    # help="Defines size of a single denoising chunk",
-    # default=100,
-    # )
-
+    # ---------------------------------
     args = parser.parse_args()
     print(args)
 
@@ -321,7 +318,7 @@ def main(args):
             ), "Should provide --radius if you want to use mask"
         if args.store_negative_values:
             assert (
-                args.dtype != "uint16"
+                args.extract_dtype != "uint16"
             ), f"You want to store negative values but have provided wrong dtype: {args.dtype}"
 
     # Main execution selector
