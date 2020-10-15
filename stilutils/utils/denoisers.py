@@ -82,7 +82,7 @@ class NMFDenoiser(AbstractDenoiser):
         self.n_components = n_components
         self.important_components = important_components
 
-    def fit(self, data, center, radius=45):
+    def fit(self, data):
         """
         fit searches for the background profile using NMF decomposition
         - (N, M, M) image series --> (N, M**2) flattened images
@@ -105,8 +105,7 @@ class NMFDenoiser(AbstractDenoiser):
         np.ndarray
             Background profile
         """
-        data_m = apply_mask(data, center=center, radius=radius)
-        X = data_m.reshape(data_m.shape[0], -1)
+        X = data.reshape(data.shape[0], -1)
 
         nmf = NMF(
             n_components=self.n_components,
@@ -115,7 +114,7 @@ class NMFDenoiser(AbstractDenoiser):
         nmf.fit(X)
         coeffs = nmf.transform(X)
         bg_full = nmf.components_[: self.important_components, :].reshape(
-            (-1, *data_m.shape[1:])
+            (-1, *data.shape[1:])
         )
 
         # memorize scalefactors and background
@@ -124,7 +123,7 @@ class NMFDenoiser(AbstractDenoiser):
 
         return bg_full
 
-    def transform(self, data, center, radius=45, alpha=None):
+    def transform(self, data, alpha=None):
         """
         nmf_denoise performs NMF-decomposition based denoising
         - (N, M, M) image series --> (N, M**2) flattened images
@@ -151,7 +150,6 @@ class NMFDenoiser(AbstractDenoiser):
             Denoised data
         """
         img_shape = data.shape[1:]
-        data = apply_mask(data, center=center, radius=radius)
 
         if self._bg is None:
             _ = self.fit(data=data, center=center, radius=radius)
@@ -178,7 +176,7 @@ class SVDDenoiser(AbstractDenoiser):
         self.n_iter = n_iter
         self.random_state = random_state
 
-    def fit(self, data, center, radius=45):
+    def fit(self, data):
         """
         fit searches for the background profile using NMF decomposition
         - (N, M, M) image series --> (N, M**2) flattened images
@@ -189,8 +187,6 @@ class SVDDenoiser(AbstractDenoiser):
         ----------
         data : np.ndarray
             Input data (series of 2D images, 3D total)
-        center : tuple
-            (corner_x, corner_y) tuple
         n_components : int, optional
             n_components for dimensionality reduction, by default 5
         important_components : int, optional
@@ -201,8 +197,7 @@ class SVDDenoiser(AbstractDenoiser):
         np.ndarray
             Background profile
         """
-        data_m = apply_mask(data, center=center, radius=radius)
-        X = data_m.reshape(data_m.shape[0], -1)
+        X = data.reshape(data.shape[0], -1)
 
         svd = TruncatedSVD(
             n_components=self.n_components,
@@ -213,7 +208,7 @@ class SVDDenoiser(AbstractDenoiser):
         svd.fit(X)
         coeffs = svd.transform(X)
         bg_full = svd.components_[: self.important_components, :].reshape(
-            (-1, *data_m.shape[1:])
+            (-1, *data.shape[1:])
         )
 
         # memorize scalefactors and background
@@ -222,7 +217,7 @@ class SVDDenoiser(AbstractDenoiser):
 
         return bg_full
 
-    def transform(self, data, center, radius=45, alpha=None):
+    def transform(self, data, alpha=None):
         """
         nmf_denoise performs SVD-decomposition based denoising
         - (N, M, M) image series --> (N, M**2) flattened images
@@ -236,8 +231,6 @@ class SVDDenoiser(AbstractDenoiser):
         ----------
         data : np.ndarray
             Input data (series of 2D images, 3D total)
-        center : tuple
-            (corner_x, corner_y) tuple
         n_components : int, optional
             n_components for dimensionality reduction, by default 5
         important_components : int, optional
@@ -249,7 +242,6 @@ class SVDDenoiser(AbstractDenoiser):
             Denoised data
         """
         img_shape = data.shape[1:]
-        data = apply_mask(data, center=center, radius=radius)
 
         if self._bg is None:
             _ = self.fit(data=data, center=center, radius=radius)
@@ -273,7 +265,7 @@ class PercentileDenoiser(AbstractDenoiser):
         self._percentile = percentile
         self._alpha = alpha
 
-    def transform(self, data, center, radius=45):
+    def transform(self, data):
         """
         percentile_denoise applies percentile denoising:
         - create percentile-based background profille
@@ -284,17 +276,12 @@ class PercentileDenoiser(AbstractDenoiser):
         ----------
         data : np.ndarray
             Input data (series of 2D images, 3D total)
-        center : tuple, optional
-            (corner_x, corner_y), by default (720, 710)
-        percentile : int, optional
-            percentile to use, by default 45
 
         Returns
         -------
         np.ndarray
             Denoised images
         """
-        data = apply_mask(data, center=center, radius=radius)
 
         if self._bg is None:
             self.fit(data, q=self._percentile)
