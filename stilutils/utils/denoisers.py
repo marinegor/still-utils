@@ -458,3 +458,23 @@ def _radial_profile(data, center, normalize=True):
         radialprofile = radialprofile / radialprofile.sum()
 
     return radialprofile
+
+
+def _stride_profile(data, stride=0):
+    """
+    _stride_profile returns 2D-stride of an image, reshaped into 1D0
+
+    Parameters
+    ----------
+    data : np.ndarray
+        (M,N)-shaped np.ndarray
+    stride : int, optional
+        take each nth pixel, by default 0
+
+    Returns
+    -------
+    np.ndarray
+        1D numpy array
+    """
+    rv = data[::stride, ::stride].flatten()
+    return rv
