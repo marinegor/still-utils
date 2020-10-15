@@ -152,111 +152,185 @@ def main(args):
     """The main function"""
 
     parser = argparse.ArgumentParser(
-        description="Denoises images using simple percentile filter",
+        description="Provides interface for image denoising",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument(
-        "input_lst",
-        type=str,
-        help="Input list in CrystFEL format (might be with or without events, or even combined)",
-    )
-    parser.add_argument(
-        "--datapath", type=str, help="Path to your data inside a cxi file"
-    )
-    parser.add_argument(
-        "--center", type=str, help="Center position", default="719.9 711.5"
-    )
-    parser.add_argument(
-        "--chunksize",
-        type=int,
-        help="Defines size of a single denoising chunk",
-        default=100,
-    )
-    parser.add_argument(
+    subparsers = parser.add_subparsers(help="Mode selection", dest="mode")
+
+    # adding subparsers for different modes
+
+    clustering_parser = subparsers.add_parser("cluster", help="Clustering mode")
+    clustering_parser.add_argument(
         "--min_num_images",
         type=int,
         help="Chunks less then that size will be sent to singletone",
         default=50,
     )
-    parser.add_argument(
-        "--zero_negative",
-        type=int,
-        help="Whether to zero out negative pixels or not",
-        default=True,
-    )
-    parser.add_argument(
-        "--out_prefix", type=str, help="Prefix for output cxi files", default="denoised"
-    )
-    parser.add_argument("--percentile", type=int, help="Percentile to use", default=45)
-    parser.add_argument(
-        "--alpha",
-        type=float,
-        help="Threshold for scale factor determination",
-        default=0.01,
-    )
-    parser.add_argument(
-        "--radius", type=int, default=45, help="Radius to apply mask in the center"
-    )
-
-    list_of_denoisers = ["percentile", "nmf", "svd"]
-    parser.add_argument(
-        "--denoiser", choices=list_of_denoisers, help="Type of denoiser to use"
-    )
-    parser.add_argument(
-        "--output_lst_prefix",
-        type=str,
-        help="List prefix for lists after clustering",
-        default="clustered",
-    )
-    parser.add_argument(
+    clustering_parser.add_argument(
         "--clustering_distance",
         type=float,
         help="Clustering distance threshold",
         default=25.0,
     )
 
-    parser.add_argument(
+    clustering_parser.add_argument(
         "--criterion",
         type=str,
         help="Clustering criterion (google `scipy.fcluster`)",
         default="maxclust",
     )
 
+    clustering_parser.add_argument(
+        "--method",
+        type=str,
+        help="Clustering method",
+        choices=["cc", "radial"],
+        default="cc",
+    )
+    clustering_parser.add_argument(
+        "--center",
+        nargs=2,
+        metavar=("center_x", "center_y"),
+        type=float,
+        help="Detector center",
+    )
+    clustering_parser.add_argument(
+        "--reslim",
+        nargs=2,
+        metavar=("min_res", "max_res"),
+        help="Minimum and maximum resolution for radial profile (in pixels)",
+        type=float,
+        default=(0, float("inf")),
+    )
+    clustering_parser.add_argument(
+        "--stride",
+        type=int,
+        help="Stride (equal on fs and ss directions) to boost correlation calculation",
+        default=0,
+    )
+
+    # ----------------------------------------
+    extracting_parser = subparsers.add_parser(
+        "extract", help="Background extraction mode"
+    )
+    DENOISERS = {
+        "percentile": PercentileDenoiser,
+        "nmf": NMFDenoiser,
+        "svd": SVDDenoiser,
+    }
+    extracting_parser.add_argument(
+        "--method", choices=list(DENOISERS.keys()), help="Type of denoiser to use"
+    )
+    extracting_parser.add_argument(
+        "--output", type=str, default="", help="Output file prefix"
+    )
+    extracting_parser.add_argument(
+        "--quantile",
+        type=float,
+        default=45,
+        help="Quantile for percentile denoiser",
+    )
+    parser.add_argument(
+        "--dtype",
+        choices=["float32", "uint16", "int32"],
+        default="float32",
+        help="Output numeric type",
+    )
+
+    # ----------------------------------------
+    subtracting_parser = subparsers.add_parser(
+        "subtract", help="Background subtraction mode"
+    )
+    subtracting_parser.add_argument(
+        "--background", type=str, help="Background profile image"
+    )
+    subtracting_parser.add_argument(
+        "--alpha",
+        type=float,
+        help="Share of negative pixels in resulting image",
+        default=5e-3,
+    )
+    subtracting_parser.add_argument("--mask", action="store_true", default=False)
+    subtracting_parser.add_argument(
+        "--center",
+        nargs=2,
+        metavar=("center_x", "center_y"),
+        type=float,
+        help="Detector center",
+    )
+    subtracting_parser.add_argument(
+        "--radius", type=float, help="Mask radius", default=0
+    )
+    parser.add_argument(
+        "--dtype",
+        choices=["float32", "uint16", "int32"],
+        default="uint16",
+        help="Output numeric type",
+    )
+
+    # add common arguments
+    parser.add_argument(
+        "input_lst",
+        type=str,
+        help="Input list in CrystFEL format (might be with or without events, or even combined)",
+    )
+    parser.add_argument(
+        "--datapath", type=str, help="Path to your data inside a cxi file", default=None
+    )
+    parser.add_argument(
+        "--store_negative_values",
+        action="store_false",
+        help="Whether to save negative values",
+        default=True,
+    )
+
+    # parser.add_argument(
+    # "--center", type=str, help="Center position", default="719.9 711.5"
+    # )
+    # parser.add_argument(
+    # "--chunksize",
+    # type=int,
+    # help="Defines size of a single denoising chunk",
+    # default=100,
+    # )
+
     args = parser.parse_args()
+    print(args)
 
-    center = map(float, args.center.split())
-    center = list(center)
+    # compabibility checks
+    if args.mode == "cluster":
+        if args.method == "radial":
+            assert hasattr(
+                args, "center"
+            ), f"Clustering mode is {args.method} but you have not provided center argument"
+    elif args.mode == "extract":
+        if args.method == "percentile":
+            assert (
+                hasattr(args, "quantile") and 0 < args.quantile < 100
+            ), f"Percentile requires you provide a quantile {args.quantile}, and it must be 0 < {args.quantile} < 100"
+    elif args.mode == "subtract":
+        assert os.path.exists(
+            args.background
+        ), f"File you provided does not exist: {args.background}"
+        if args.mask:
+            assert hasattr(
+                args, "center"
+            ), "Should provide --center if you want to use mask"
+            assert hasattr(
+                args, "radius"
+            ), "Should provide --radius if you want to use mask"
+        if args.store_negative_values:
+            assert (
+                args.dtype != "uint16"
+            ), f"You want to store negative values but have provided wrong dtype: {args.dtype}"
 
-    profiles_ndarray = lst2profiles_ndarray(
-        args.input_lst,
-        center=center,
-        cxi_path=args.datapath,
-        h5_path=args.datapath,
-        chunksize=args.chunksize,
-    )
-    print("Clustering images using their radial profiles", file=sys.stderr)
-    image_lists_list = cluster_ndarray(
-        profiles_ndarray,
-        output_prefix=args.output_lst_prefix,
-        output_lists=True,
-        threshold=args.clustering_distance,
-        criterion=args.criterion,
-        min_num_images=args.min_num_images,
-    )
-
-    for list_to_denoise in tqdm(image_lists_list, desc="Denoising each clustered list"):
-        denoise_lst(
-            input_lst=list_to_denoise,
-            alpha=args.alpha,
-            center=center,
-            denoiser_type=args.denoiser,
-            cxi_path=args.datapath,
-            h5_path=args.datapath,
-            output_cxi_prefix=args.out_prefix,
-            chunksize=args.chunksize,
-            zero_negative=args.zero_negative,
-            radius=args.radius,
-        )
+    # Main execution selector
+    if args.mode == "cluster":
+        ...
+    elif args.mode == "extract":
+        ...
+    elif args.mode == "subtract":
+        ...
 
 
 if __name__ == "__main__":
