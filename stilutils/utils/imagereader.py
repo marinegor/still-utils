@@ -1,8 +1,12 @@
 import h5py
-import cbf
 import os
 import numpy as np
 from abc import ABC, abstractmethod
+
+try:
+    import cbf
+except ImportError:
+    print("Warning: cbf library is not available")
 
 
 class ImageReader(ABC):
