@@ -1,15 +1,17 @@
 from abc import ABC, abstractmethod
+
 from sklearn.decomposition import NMF, TruncatedSVD
 from scipy.cluster.hierarchy import ward, fcluster
 from scipy.spatial.distance import pdist
-import argparse
+
 import h5py
 import numpy as np
 import os
-import sys
 from collections import defaultdict
 from tqdm import tqdm
 from typing import Union
+
+from stilutils.utils.imagereader import ImageLoader
 
 
 class AbstractDenoiser(ABC):
@@ -25,7 +27,7 @@ class AbstractDenoiser(ABC):
     def transform(self, data, bg, scales):
         pass
 
-    def _bin_scale(self, arr, b, alpha=0.01, num_iterations=50, mm=1e10):
+    def _bin_scale(self, arr, b, alpha=1e-3, num_iterations=100, mm=1e10):
         """
         _bin_scale binary search for proper scale factor
 
@@ -71,6 +73,8 @@ class AbstractDenoiser(ABC):
         so that the share of negative pixels in resulting difference
         is less than alpha
         """
+        assert len(arr.shape) == 3, f"Shape of your array: {arr.shape} (should be 3D)"
+
         return np.array(
             [self._bin_scale(arr[i], bg, alpha=alpha) for i in range(arr.shape[0])]
         ).reshape(1, -1)
@@ -152,7 +156,7 @@ class NMFDenoiser(AbstractDenoiser):
         img_shape = data.shape[1:]
 
         if self._bg is None:
-            _ = self.fit(data=data, center=center, radius=radius)
+            _ = self.fit(data=data)
 
         if alpha is None:
             coeffs = self._scales
@@ -357,77 +361,7 @@ def apply_mask(np_arr, center=(719.9, 711.5), radius=45):
         return (np_arr * mask.reshape(1, *shape)).astype(np_arr.dtype)
 
 
-def cluster_ndarray(
-    profiles_arr,
-    output_prefix="clustered",
-    output_lists=False,
-    threshold=25,
-    criterion="maxclust",
-    min_num_images=50,
-):
-    """
-    cluster_ndarray clusters images based on their radial profiles
-
-    Parameters
-    ----------
-    profiles_arr : np.ndarray
-        radial profiles (or any other profiles, honestly) 2D np.ndarray
-    output_prefix : str, optional
-        output prefix for image lists0, by default "clustered"
-    output_lists : bool, optional
-        whether to output lists as text fiels, by default False
-    threshold : int, optional
-        distance according to criterion, by default 25
-    criterion : str, optional
-        criterion for clustering, by default "maxclust"
-    min_num_images : int, optional
-        minimal number of images in single cluster, others will go to singletone, by default 50
-
-    Returns
-    -------
-    Union[dict, list]
-        Either:
-           - Dictionary {cluster_num:[*image_and_event_lines]} -- if output_lists == False
-           - List [output_list_1.lst, output_list_2.lst, ...] -- if output_lists == True
-    """
-    profiles = np.array([elem[1] for elem in profiles_arr])
-    names = np.array([elem[0] for elem in profiles_arr])
-
-    # this actually does clustering
-    Z = ward(pdist(profiles))
-    idx = fcluster(Z, t=threshold, criterion=criterion)
-
-    # output lists
-    clusters = defaultdict(lambda: set())
-    out_lists = set()
-    for list_idx in tqdm(list(set(idx)), desc="Output lists"):
-        belong_to_this_idx = np.where(idx == list_idx)[0]
-        if len(belong_to_this_idx) < min_num_images:
-            fout_name = f"{output_prefix}_singletone.lst"
-            out_cluster_idx = -1
-        else:
-            fout_name = f"{output_prefix}_{list_idx}.lst"
-            out_cluster_idx = list_idx
-        out_lists.add(fout_name)
-        try:
-            os.remove(fout_name)
-        except OSError:
-            pass
-
-        # print output lists if you want to
-        for name in names[belong_to_this_idx]:
-            clusters[out_cluster_idx].add(name)
-        if output_lists:
-            with open(fout_name, "a") as fout:
-                print(*clusters[out_cluster_idx], sep="\n", file=fout)
-
-    if output_lists:
-        return list(out_lists)
-    else:
-        return clusters
-
-
-def _radial_profile(data, center, normalize=True):
+def _radial_profile(data, center, rmin=0, rmax=float(1e9), normalize=True):
     """
     _radial_profile returns radial profile of a 2D image
 
@@ -437,6 +371,10 @@ def _radial_profile(data, center, normalize=True):
         (M,N)-shaped np.ndarray
     center : tuple
         two float numbers as a center
+    rmin : int
+        minimal resolution
+    rmax : int
+        maximum resolutionk
     normalize : bool, optional
         whether to normalize images, by default True
 
@@ -457,10 +395,10 @@ def _radial_profile(data, center, normalize=True):
     if normalize:
         radialprofile = radialprofile / radialprofile.sum()
 
-    return radialprofile
+    return radialprofile[rmin:rmax]
 
 
-def _stride_profile(data, stride=0):
+def _stride_profile(data, stride=1):
     """
     _stride_profile returns 2D-stride of an image, reshaped into 1D0
 
@@ -478,3 +416,112 @@ def _stride_profile(data, stride=0):
     """
     rv = data[::stride, ::stride].flatten()
     return rv
+
+
+def lst2profiles_ndarray(
+    input_lst: str,
+    func=_stride_profile,
+    cxi_path="/entry_1/data_1/data",
+    h5_path="/data/rawdata0",
+    chunksize=100,
+    **func_kwargs,
+) -> np.ndarray:
+    """
+    lst2profiles_ndarray converts CrystFEL list into 2D np.ndarray with following structure:
+    np.array([filename, event_name, *profile])
+
+    Parameters
+    ----------
+    input_lst : str
+        input list filename
+    cxi_path : str, optional
+        datapath inside cxi/h5 file, by default "/entry_1/data_1/data"
+    chunksize : int, optional
+        size of chunk for reading, by default 100
+
+    Returns
+    -------
+    List
+        [filename, *profile]
+    """
+
+    loader = ImageLoader(
+        input_lst, cxi_path=cxi_path, h5_path=h5_path, chunksize=chunksize
+    )
+
+    profiles = []
+
+    for lst, data in tqdm(loader, desc="Converting images to radial profiles"):
+
+        for elem in zip(lst, data):
+            profile = func(elem[1], **func_kwargs)
+            profiles.append([elem[0], profile])
+
+    return profiles
+
+
+def ndarray2index(
+    profiles_arr,
+    metric="correlation",
+    criterion="distance",
+    threshold=5e-3,
+):
+    """
+    ndarray2index returns linkage and index for a given ndarray of profiles
+
+    Parameters
+    ----------
+    profiles_arr : np.ndarray
+        input ndarray
+    singletone_threshold : int, optional
+        minimum number of images in cluster to be considered a singletone, by default 25
+    metric : str, optional
+        metric (see scipy.spatial.pdist), by default 'correlation'
+    criterion : str, optional
+        criterion (see scipy.cluster.hierarchy.fcluster), by default 'distance'
+    threshold : float, optional
+        distance threshold for a given metric, by default 0.01
+    """
+
+    Z = ward(pdist(profiles_arr, metric=metric))
+    index = fcluster(Z, t=threshold, criterion=criterion)
+
+    return index
+
+
+def index2lists(
+    index,
+    names,
+    output_prefix="cluster",
+    singletone_threshold=25,
+):
+    """
+    index2lists writes lists to disk
+
+    Parameters
+    ----------
+    index : np.ndarray
+        return value of scipy.cluster.hierarchy.fcluster
+    names : list
+        list with event lines in order as in index
+    output_prefix : str, optional
+        output list prefix, by default "cluster"
+    singletone_threshold : int, optional
+        minimum number of frames in index to be considered non-singletone, by default 25
+    """
+    clusters = [
+        np.array(names)[np.where(index == cluster_idx)] for cluster_idx in set(index)
+    ]
+
+    singletone = np.hstack(
+        [cluster for cluster in clusters if len(cluster) < singletone_threshold]
+    )
+    clusters = [elem for elem in clusters if len(elem) >= singletone_threshold]
+
+    with open(f"{output_prefix}_singletone.lst", "w") as fout:
+        for elem in singletone:
+            print(elem, file=fout)
+
+    for cluster_idx, cluster in enumerate(clusters):
+        with open(f"{output_prefix}_{cluster_idx}.lst", "w") as fout:
+            print(*cluster, sep="\n", end="", file=fout)
