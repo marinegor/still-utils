@@ -20,7 +20,7 @@ class AbstractDenoiser(ABC):
         self._bg = None
 
     @abstractmethod
-    def fit(self, data, bg, center, radius=45):
+    def fit(self, data, bg):
         pass
 
     @abstractmethod
@@ -248,7 +248,7 @@ class SVDDenoiser(AbstractDenoiser):
         img_shape = data.shape[1:]
 
         if self._bg is None:
-            _ = self.fit(data=data, center=center, radius=radius)
+            _ = self.fit(data=data)
 
         if alpha is None:
             coeffs = self._scales
@@ -260,7 +260,7 @@ class SVDDenoiser(AbstractDenoiser):
 
         bg_scaled = np.dot(self._bg.T, coeffs).T
 
-        return apply_mask(data, center=center, radius=radius) - bg_scaled
+        return data - bg_scaled
 
 
 class PercentileDenoiser(AbstractDenoiser):
@@ -269,7 +269,7 @@ class PercentileDenoiser(AbstractDenoiser):
         self._percentile = percentile
         self._alpha = alpha
 
-    def transform(self, data):
+    def transform(self, data, alpha):
         """
         percentile_denoise applies percentile denoising:
         - create percentile-based background profille
@@ -424,6 +424,7 @@ def lst2profiles_ndarray(
     cxi_path="/entry_1/data_1/data",
     h5_path="/data/rawdata0",
     chunksize=100,
+    compress=True,
     **func_kwargs,
 ) -> np.ndarray:
     """
@@ -438,6 +439,8 @@ def lst2profiles_ndarray(
         datapath inside cxi/h5 file, by default "/entry_1/data_1/data"
     chunksize : int, optional
         size of chunk for reading, by default 100
+    chunksize : bool, optional
+        whether to convert profiles to int16, by default True
 
     Returns
     -------
@@ -455,6 +458,8 @@ def lst2profiles_ndarray(
 
         for elem in zip(lst, data):
             profile = func(elem[1], **func_kwargs)
+            if compress:
+                profile = profile.astype("int16")
             profiles.append([elem[0], profile])
 
     return profiles

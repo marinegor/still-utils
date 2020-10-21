@@ -21,6 +21,7 @@ from stilutils.utils.denoisers import (
     lst2profiles_ndarray,
     ndarray2index,
     index2lists,
+    apply_mask,
 )
 
 
@@ -31,6 +32,22 @@ def main(args):
         description="Provides interface for image denoising",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
+    # add common arguments
+    parser.add_argument(
+        "input_lst",
+        type=str,
+        help="Input list in CrystFEL format (might be with or without events, or even combined)",
+    )
+    parser.add_argument(
+        "--datapath", type=str, help="Path to your data inside a cxi file", default=None
+    )
+    parser.add_argument(
+        "--store_negative_values",
+        action="store_false",
+        help="Whether to save negative values",
+        default=True,
+    )
+
     subparsers = parser.add_subparsers(help="Mode selection", dest="mode")
 
     # adding subparsers for different modes
@@ -120,35 +137,28 @@ def main(args):
         default=100,
         help="Number of images in chunk for denoising",
     )
-    parser.add_argument(
+    extracting_parser.add_argument(
         "--bg_dtype",
         choices=["float32", "uint16", "int32"],
         default="float32",
         help="Output numeric type",
     )
 
-    # ----------------------------------------
-    subtracting_parser = subparsers.add_parser(
-        "subtract", help="Background subtraction mode"
-    )
-    subtracting_parser.add_argument(
-        "--background", type=str, help="Background profile image"
-    )
-    subtracting_parser.add_argument(
+    extracting_parser.add_argument(
         "--alpha",
         type=float,
         help="Share of negative pixels in resulting image",
         default=5e-3,
     )
-    subtracting_parser.add_argument("--mask", action="store_true", default=False)
-    subtracting_parser.add_argument(
+    extracting_parser.add_argument("--mask", action="store_true", default=False)
+    extracting_parser.add_argument(
         "--center",
         nargs=2,
         metavar=("center_x", "center_y"),
         type=float,
         help="Detector center",
     )
-    subtracting_parser.add_argument(
+    extracting_parser.add_argument(
         "--radius", type=float, help="Mask radius", default=0
     )
     parser.add_argument(
@@ -156,22 +166,6 @@ def main(args):
         choices=["float32", "uint16", "int32"],
         default="uint16",
         help="Output numeric type",
-    )
-
-    # add common arguments
-    parser.add_argument(
-        "input_lst",
-        type=str,
-        help="Input list in CrystFEL format (might be with or without events, or even combined)",
-    )
-    parser.add_argument(
-        "--datapath", type=str, help="Path to your data inside a cxi file", default=None
-    )
-    parser.add_argument(
-        "--store_negative_values",
-        action="store_false",
-        help="Whether to save negative values",
-        default=True,
     )
 
     # ---------------------------------
@@ -192,7 +186,7 @@ def main(args):
             func_kw = {"rmin": args.rmin, "rmax": args.rmax, "center": args.center}
         elif args.method == "cc":
             func_ = _stride_profile
-            func_kw = {}
+            func_kw = {"stride": args.stride}
     elif args.mode == "extract":
         if args.method == "percentile":
             assert (
@@ -242,17 +236,46 @@ def main(args):
         )
     elif args.mode == "extract":
         loader = ImageLoader(
-            input_list=args.input_list,
+            input_list=args.input_lst,
             cxi_path=args.datapath,
             h5_path=args.datapath,
             chunksize=args.chunksize,
         )
 
-        for chunk in loader:
+        for chunk_idx, chunk in enumerate(loader):
             names, frames = chunk
+            if args.method == "percentile":
+                denoiser = DENOISERS[args.method](percentile=args.quantile)
+            else:
+                denoiser = DENOISERS[args.method]()
 
-    elif args.mode == "subtract":
-        ...
+            if args.mask:
+                frames = apply_mask(frames, center=args.center, radius=args.radius)
+
+            print("Start background extraction...")
+            bg = denoiser.fit(frames)
+            print("Finish background extraction")
+
+            # write background profile to a file
+            fout_bg = f"{args.input_lst.strip('.lst')}_bg.h5"
+            with h5py.File(fout_bg, mode="w") as bg_fout:
+                bg_fout.create_dataset(
+                    args.datapath,
+                    data=bg,
+                )
+
+            # perform the subtraction itself
+            denoised = denoiser.transform(frames, alpha=args.alpha)
+
+            # do type conversion & set negative pixels to 0
+            denoised = denoised.astype(args.subtract_dtype)
+            if not args.store_negative_values:
+                denoised[denoised < 0] = 0
+
+            # write denoised data
+            output_cxi = f"{args.method}_{args.output}_{chunk_idx}.cxi"
+            with h5py.File(output_cxi, mode="w") as fout:
+                fout.create_dataset(args.datapath, data=denoised)
 
 
 if __name__ == "__main__":
