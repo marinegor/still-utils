@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3
 
 import argparse
 import h5py
@@ -97,8 +97,8 @@ def main(args):
         nargs=2,
         metavar=("min_res", "max_res"),
         help="Minimum and maximum resolution for radial profile (in pixels)",
-        type=float,
-        default=(0, float("inf")),
+        type=int,
+        default=(0, int(1e10)),
     )
     clustering_parser.add_argument(
         "--stride",
@@ -181,9 +181,7 @@ def main(args):
 
         if args.method == "radial":
             func_ = _radial_profile
-            args.rmin = int(args.rmin)
-            args.rmax = int(args.rmax)
-            func_kw = {"rmin": args.rmin, "rmax": args.rmax, "center": args.center}
+            func_kw = {"rmin": args.reslim[0], "rmax": args.reslim[1], "center": args.center}
         elif args.method == "cc":
             func_ = _stride_profile
             func_kw = {"stride": args.stride}
