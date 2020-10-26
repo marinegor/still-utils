@@ -1,4 +1,4 @@
-cbf==1.1.3
+#cbf==1.1.3[cbf]
 h5py==2.10.0
 hyperopt==0.2.4
 matplotlib==3.1.1
