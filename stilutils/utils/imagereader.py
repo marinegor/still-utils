@@ -5,8 +5,8 @@ from abc import ABC, abstractmethod
 
 try:
     import cbf
-except ImportError:
-    print("Warning: cbf library is not available")
+except ModuleNotFoundError:
+    print("Warning: cbf is unavailable!")
 
 
 class ImageReader(ABC):

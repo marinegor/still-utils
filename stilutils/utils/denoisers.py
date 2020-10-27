@@ -488,6 +488,10 @@ def ndarray2index(
         distance threshold for a given metric, by default 0.01
     """
 
+    profiles_arr[(profiles_arr == -np.inf) |
+                 (profiles_arr == np.inf)  |
+                 (profiles_arr == np.nan)
+                ] = 0
     Z = ward(pdist(profiles_arr, metric=metric))
     index = fcluster(Z, t=threshold, criterion=criterion)
 
