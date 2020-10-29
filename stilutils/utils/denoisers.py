@@ -361,7 +361,7 @@ def apply_mask(np_arr, center=(719.9, 711.5), radius=45):
         return (np_arr * mask.reshape(1, *shape)).astype(np_arr.dtype)
 
 
-def _radial_profile(data, center, rmin=0, rmax=float(1e9), normalize=True):
+def _radial_profile(data, center, rmin=0, rmax=int(1e9), normalize=True):
     """
     _radial_profile returns radial profile of a 2D image
 
@@ -458,7 +458,7 @@ def lst2profiles_ndarray(
 
         for elem in zip(lst, data):
             profile = func(elem[1], **func_kwargs)
-            if compress:
+            if compress and func != _radial_profile:
                 profile = profile.astype("int16")
             profiles.append([elem[0], profile])
 
@@ -488,6 +488,7 @@ def ndarray2index(
         distance threshold for a given metric, by default 0.01
     """
 
+    profiles_arr = np.array(profiles_arr)
     profiles_arr[(profiles_arr == -np.inf) |
                  (profiles_arr == np.inf)  |
                  (profiles_arr == np.nan)
