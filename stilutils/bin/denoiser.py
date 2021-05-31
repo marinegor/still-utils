@@ -126,10 +126,7 @@ def main(args):
         "--output", type=str, default="", help="Output file prefix"
     )
     extracting_parser.add_argument(
-        "--quantile",
-        type=float,
-        default=45,
-        help="Quantile for percentile denoiser",
+        "--quantile", type=float, default=45, help="Quantile for percentile denoiser",
     )
     extracting_parser.add_argument(
         "--chunksize",
@@ -167,6 +164,9 @@ def main(args):
         default="uint16",
         help="Output numeric type",
     )
+    extracting_parser.add_argument(
+        "--patch_size", nargs=2, type=int, default=(None, None), help="Patch size"
+    )
 
     # ---------------------------------
     args = parser.parse_args()
@@ -181,7 +181,11 @@ def main(args):
 
         if args.method == "radial":
             func_ = _radial_profile
-            func_kw = {"rmin": args.reslim[0], "rmax": args.reslim[1], "center": args.center}
+            func_kw = {
+                "rmin": args.reslim[0],
+                "rmax": args.reslim[1],
+                "center": args.center,
+            }
         elif args.method == "cc":
             func_ = _stride_profile
             func_kw = {"stride": args.stride}
@@ -250,20 +254,47 @@ def main(args):
             if args.mask:
                 frames = apply_mask(frames, center=args.center, radius=args.radius)
 
-            print("Start background extraction...")
-            bg = denoiser.fit(frames)
-            print("Finish background extraction")
+            px, py = args.patch_size
+            if px is not None and py is not None:
+                nx, ny = frames.shape[1:]
+                rv = np.zeros(frames.shape)
+                slices = [
+                    (slice(ix, ix + px), slice(iy, iy + py))
+                    for ix in range(0, nx, px)
+                    for iy in range(0, ny, py)
+                ]
 
-            # write background profile to a file
-            fout_bg = f"{args.input_lst.strip('.lst')}_bg.h5"
-            with h5py.File(fout_bg, mode="w") as bg_fout:
-                bg_fout.create_dataset(
-                    args.datapath,
-                    data=bg,
-                )
+                def denoise_batch(s):
+                    sx, sy = s
+    
+                    patch = frames[:, sx, sy]
+                    try:
+                        patch_d = denoiser.transform(patch, alpha=args.alpha)
+                    except:
+                        patch_d = patch
+    
+                    return sx, sy, patch_d
+                
+                rv = np.zeros(frames.shape)
+                answ = map(denoise_batch, slices)
+                for idx, (sx, sy, patch_d) in enumerate(answ):
+                    print(f"{100*idx/len(slices):2.2f}%", end='\r')
+                    rv[:,sx, sy] += patch_d
+                denoised = rv
 
-            # perform the subtraction itself
-            denoised = denoiser.transform(frames, alpha=args.alpha)
+
+            else:
+                bg = denoiser.fit(frames)
+
+                # write background profile to a file
+                fout_bg = f"{args.input_lst.strip('.lst')}_bg.h5"
+                with h5py.File(fout_bg, mode="w") as bg_fout:
+                    bg_fout.create_dataset(
+                        args.datapath, data=bg,
+                    )
+
+                # perform the subtraction itself
+                denoised = denoiser.transform(frames, alpha=args.alpha)
 
             # do type conversion & set negative pixels to 0
             denoised = denoised.astype(args.subtract_dtype)
