@@ -126,7 +126,7 @@ def parse_stream(filename: str, threshold: float, debug: bool) -> Tuple[Dict, Di
                 #    h    k    l          I   sigma(I)       peak background  fs/px  ss/px panel
                 #  -63   41    9     -41.31      57.45     195.00     170.86  731.0 1350.4 p0
                 crystal_peak_number += 1
-                _, _, _, intensity_crystal, _, _, _, fs, ss, panel = [
+                h, k, l, intensity_crystal, _, _, _, fs, ss, panel = [
                     i for i in line.split()
                 ]
                 if float(intensity_crystal) >= threshold:
@@ -143,6 +143,9 @@ def parse_stream(filename: str, threshold: float, debug: bool) -> Tuple[Dict, Di
                             "ss": float(ss),
                             "I": float(intensity_crystal),
                             "panel": panel,
+                            "h": h,
+                            "k": k,
+                            "l": l,
                         }
                     else:
                         answ_crystals[
