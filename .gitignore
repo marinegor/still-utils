@@ -21,9 +21,12 @@ test
 __pycache__
 .vscode
 .ipynb_checkpoints
+*.egg-info
+build
 
 # Archives
 *.zip
 *.tar
 *.tar.gz
 *.lz4
+
