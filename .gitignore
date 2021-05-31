@@ -23,6 +23,7 @@ __pycache__
 .ipynb_checkpoints
 *.egg-info
 build
+env
 
 # Archives
 *.zip
